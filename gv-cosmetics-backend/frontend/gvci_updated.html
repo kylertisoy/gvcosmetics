@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GV Cosmetics — Beauty System</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&family=Jost:wght@300;400;500;600&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<link rel="stylesheet" href="style.css">
+<style>
+.hero-carousel-wrap{width:100%;display:flex;flex-direction:column;align-items:center;}
+.hero-carousel{position:relative;width:100%;height:320px;display:flex;align-items:center;justify-content:center;gap:10px;}
+.hc-slides{position:relative;flex:1;height:100%;overflow:hidden;border-radius:14px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);}
+.hc-slide{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity .45s ease;cursor:pointer;padding:20px;text-align:center;}
+.hc-slide.active{opacity:1;pointer-events:auto;}
+.hc-slide img{max-height:170px;max-width:80%;object-fit:contain;margin-bottom:16px;border-radius:8px;background:#fff;padding:10px;}
+.hc-slide-placeholder{width:140px;height:140px;border-radius:8px;background:rgba(255,255,255,0.08);margin-bottom:16px;display:flex;align-items:center;justify-content:center;font-family:'Playfair Display',serif;font-size:14px;color:rgba(255,255,255,0.6);}
+.hc-tag{display:inline-block;font-size:10px;letter-spacing:0.08em;text-transform:uppercase;color:rgba(255,255,255,0.55);margin-bottom:6px;font-family:'Jost',sans-serif;}
+.hc-slide-name{font-size:17px;font-weight:600;color:#fff;font-family:'Playfair Display',serif;}
+.hc-arrow{background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.18);color:#fff;width:42px;height:42px;min-width:42px;border-radius:50%;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .2s;}
+.hc-arrow:hover{background:rgba(255,255,255,0.2);}
+.hc-dots{display:flex;justify-content:center;gap:8px;margin-top:14px;}
+.hc-dot{width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,0.3);cursor:pointer;transition:background .2s;border:none;padding:0;}
+.hc-dot.active{background:#fff;}
+</style>
+</head>
+<body>
+<div id="toast" class="toast"></div>
+
+<!-- ═══════════ LOGIN ═══════════ -->
+<div id="screen-login">
+  <div class="login-left">
+    <div class="login-brand">GV Cosmetics</div>
+    <div class="login-tagline">Beauty Management System · CDO Branch</div>
+    <div class="login-deco"></div>
+    <div class="login-features">
+      <div class="lf-item"><div class="lf-dot">🛍️</div><div class="lf-text"><b>Shop with ease</b><br>Browse & order your favorite GV beauty products</div></div>
+      <div class="lf-item"><div class="lf-dot">📦</div><div class="lf-text"><b>Track your orders</b><br>Know exactly where your package is</div></div>
+      <div class="lf-item"><div class="lf-dot">🔔</div><div class="lf-text"><b>Get notified</b><br>Receive updates when your order status changes</div></div>
+    </div>
+    <div class="login-hint">
+      <div class="lh-title">Demo Accounts</div>
+      <div class="lh-row"><div class="lh-dot rose"></div><div class="lh-text">Customer — <b>customer@gv.com</b> / <b>1234</b></div></div>
+      <div class="lh-row"><div class="lh-dot blue"></div><div class="lh-text">Admin — <b>admin@gv.com</b> / <b>admin123</b></div></div>
+    </div>
+  </div>
+  <div class="login-right">
+    <div id="login-form-wrap">
+      <h2>Welcome back</h2>
+      <p>Sign in to your GV Cosmetics account to start shopping or managing your store.</p>
+      <div class="field"><label>Email Address</label><input type="email" id="inp-email" placeholder="you@example.com"></div>
+      <div class="field"><label>Password</label><input type="password" id="inp-pass" placeholder="••••••••" onkeydown="if(event.key==='Enter')doLogin()"></div>
+      <div class="err-msg" id="err-msg">❌ Invalid email or password. Please try again.</div>
+      <button class="login-btn" onclick="doLogin()">Sign In →</button>
+      <div class="login-switch">New here? <a href="#" onclick="showSignup();return false;">Create an account</a></div>
+      <div class="login-footer">GV Cosmetics Inc. © 2025 · Cagayan de Oro Branch</div>
+    </div>
+    <div id="signup-form-wrap" class="hidden">
+      <h2>Create your account</h2>
+      <p>Sign up to start shopping at GV Cosmetics. Accounts are created as customers.</p>
+      <div class="field"><label>Full Name</label><input type="text" id="su-name" placeholder="Juan Dela Cruz"></div>
+      <div class="field"><label>Email Address</label><input type="email" id="su-email" placeholder="you@example.com"></div>
+      <div class="field"><label>Password</label><input type="password" id="su-pass" placeholder="At least 6 characters"></div>
+      <div class="field"><label>Confirm Password</label><input type="password" id="su-pass2" placeholder="••••••••" onkeydown="if(event.key==='Enter')doRegister()"></div>
+      <div class="err-msg" id="su-err"></div>
+      <button class="login-btn" onclick="doRegister()">Create Account →</button>
+      <div class="login-switch">Already have an account? <a href="#" onclick="showLoginForm();return false;">Sign in</a></div>
+      <div class="login-footer">GV Cosmetics Inc. © 2025 · Cagayan de Oro Branch</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ CUSTOMER ═══════════ -->
+<div id="screen-customer" class="hidden">
+  <div class="mega-overlay" id="mega-overlay" onclick="closeAllMega()"></div>
+  <nav class="c-topbar" id="c-topbar-el">
+    <span class="c-brand">GV <span>Cosmetics</span></span>
+    <div class="c-nav-center">
+
+      <!-- HOME mega -->
+      <div class="mn-item">
+        <button class="c-nav-link active" id="cnav-shop" onclick="cPage('shop',this)">Home <span class="mn-chevron">▾</span></button>
+        <div class="mega-panel mega-home">
+          <div class="mega-inner">
+            <!-- Explore -->
+            <div>
+              <div class="mc-head">Explore</div>
+              <button class="mc-link" onclick="heroCarouselShow(1);closeAllMega()"><span class="mc-icon">✨</span>New Arrivals<span class="mc-tag new">New</span></button>
+              <button class="mc-link" onclick="heroCarouselShow(0);closeAllMega()"><span class="mc-icon">🔥</span>Best Sellers<span class="mc-tag hot">Hot</span></button>
+              <button class="mc-link" onclick="heroCarouselShow(2);closeAllMega()"><span class="mc-icon">⚡</span>Flash Sale</button>
+              <button class="mc-link" onclick="heroCarouselShow(3);closeAllMega()"><span class="mc-icon">🌟</span>Featured Collections</button>
+            </div>
+            <div class="mc-divider"></div>
+            <!-- Quick Links -->
+            <div>
+              <div class="mc-head">Quick Links</div>
+              <button class="mc-link" onclick="cPage('orders',document.getElementById('cnav-orders'));closeAllMega()"><span class="mc-icon">📦</span>Track My Order</button>
+              <button class="mc-link" onclick="cPage('wishlist',document.getElementById('cnav-wishlist'));closeAllMega()"><span class="mc-icon">❤️</span>My Wishlist</button>
+              <button class="mc-link" onclick="cPage('stats',document.getElementById('cnav-stats'));closeAllMega()"><span class="mc-icon">📊</span>Purchase Stats</button>
+              <button class="mc-link" onclick="cPage('profile',document.getElementById('cnav-profile'));closeAllMega()"><span class="mc-icon">👤</span>My Profile</button>
+              <button class="mc-link" onclick="cPage('cart',document.getElementById('cnav-cart'));closeAllMega()"><span class="mc-icon">🛒</span>My Cart</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- PRODUCTS mega -->
+      <div class="mn-item">
+        <button class="c-nav-link" id="cnav-shop2" onclick="cPage('shop',document.getElementById('cnav-shop'));closeAllMega()">Products <span class="mn-chevron">▾</span></button>
+        <div class="mega-panel mega-products">
+          <div class="mega-inner">
+            <!-- Shop by Category -->
+            <div>
+              <div class="mc-head">Shop by Category</div>
+              <div class="mc-cat-grid">
+                <button class="mc-cat-pill" onclick="setCat('Hair Care');cPage('shop',document.getElementById('cnav-shop'));heroCarouselShow(1);hardCloseMega();scrollToShopResults()"><span class="cp-icon">💈</span>Hair Care</button>
+                <button class="mc-cat-pill" onclick="setCat('Body Care');cPage('shop',document.getElementById('cnav-shop'));heroCarouselShow(3);hardCloseMega();scrollToShopResults()"><span class="cp-icon">🧴</span>Body Care</button>
+                <button class="mc-cat-pill" onclick="setCat('Alcohol');cPage('shop',document.getElementById('cnav-shop'));heroCarouselShow(0);hardCloseMega();scrollToShopResults()"><span class="cp-icon">💧</span>Alcohol</button>
+                <button class="mc-cat-pill" onclick="setCat('Personal Care');cPage('shop',document.getElementById('cnav-shop'));heroCarouselShow(4);hardCloseMega();scrollToShopResults()"><span class="cp-icon">🤍</span>Personal Care</button>
+              </div>
+              <div style="margin-top:18px"><div class="mc-head">Product Details</div></div>
+              <button class="mc-link" onclick="openModal('description');closeAllMega()"><span class="mc-icon">📋</span>Product Description</button>
+              <button class="mc-link" onclick="openModal('ingredients');closeAllMega()"><span class="mc-icon">🧪</span>Ingredients</button>
+              <button class="mc-link" onclick="openModal('howtouse');closeAllMega()"><span class="mc-icon">📖</span>How to Use</button>
+              <button class="mc-link" onclick="openModal('benefits');closeAllMega()"><span class="mc-icon">💚</span>Benefits</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- right-side utility links -->
+      <button class="c-nav-link" id="cnav-wishlist" onclick="cPage('wishlist',this)">Wishlist <span class="wishlist-nav-badge" id="wl-badge">0</span></button>
+      <button class="c-nav-link" id="cnav-cart" onclick="cPage('cart',this)">Cart</button>
+      <button class="c-nav-link" id="cnav-orders" onclick="cPage('orders',this)">My Orders</button>
+
+      <!-- PAGES mega -->
+      <div class="mn-item">
+        <button class="c-nav-link">Pages <span class="mn-chevron">▾</span></button>
+        <div class="mega-panel mega-pages">
+          <div class="mega-inner">
+            <!-- Company -->
+            <div>
+              <div class="mc-head">Company</div>
+              <button class="mc-link" onclick="openModal('about');closeAllMega()"><span class="mc-icon">🏢</span>About Us</button>
+              <button class="mc-link" onclick="openModal('contact');closeAllMega()"><span class="mc-icon">📞</span>Contact Us</button>
+              <button class="mc-link" onclick="openModal('faq');closeAllMega()"><span class="mc-icon">❓</span>FAQs</button>
+              <div style="margin-top:20px"><div class="mc-head">My Account</div></div>
+              <button class="mc-link" onclick="cPage('orders',document.getElementById('cnav-orders'));closeAllMega()"><span class="mc-icon">📦</span>Track Order</button>
+              <button class="mc-link" onclick="cPage('profile',document.getElementById('cnav-profile'));closeAllMega()"><span class="mc-icon">👤</span>My Account</button>
+              <button class="mc-link" onclick="cPage('orders',document.getElementById('cnav-orders'));closeAllMega()"><span class="mc-icon">📋</span>Order History</button>
+              <button class="mc-link" onclick="cPage('wishlist',document.getElementById('cnav-wishlist'));closeAllMega()"><span class="mc-icon">❤️</span>Saved Items</button>
+            </div>
+            <div class="mc-divider"></div>
+            <!-- Promo card -->
+            <div class="mc-promo" style="min-width:220px">
+              <div class="mc-promo-emoji">💌</div>
+              <div class="mc-promo-label">Need Help?</div>
+              <div class="mc-promo-title">We're Here For You</div>
+              <div style="font-size:12px;color:rgba(255,255,255,0.55);margin-bottom:14px;line-height:1.7;font-family:'Jost',sans-serif;position:relative;z-index:1">Mon–Sat, 9am–6pm.<br>Based in Cagayan de Oro.</div>
+              <button class="mc-promo-btn" onclick="openModal('contact');closeAllMega()">Contact Support →</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <button class="c-nav-link" id="cnav-stats" onclick="cPage('stats',this)" style="display:none">My Stats</button>
+      <button class="c-nav-link" id="cnav-profile" onclick="cPage('profile',this)" style="display:none">Profile</button>
+
+    </div>
+    <div class="c-topbar-right">
+      <button class="cart-pill" onclick="cPage('cart',document.getElementById('cnav-cart'))" id="cart-pill">🛒 Cart (0)</button>
+      <div class="loyalty-wrap" id="loyalty-wrap">
+        <div class="loyalty-pill" onclick="toggleLoyaltyPanel(event)">⭐ <span class="lp-text">Points: </span><b id="lp-display">0</b></div>
+        <div class="loyalty-panel" id="loyalty-panel">
+          <div class="lp-head"><div class="lp-pts-num" id="lp-pts-big">0</div><div class="lp-pts-lbl">Loyalty Points</div></div>
+          <div class="lp-body">
+            <div class="lp-hint">Earn 1 point per ₱10 spent. Redeem for discounts!</div>
+            <div class="lp-progress-bar"><div class="lp-progress-fill" id="lp-bar" style="width:0%"></div></div>
+            <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-bottom:8px"><span id="lp-pts-lbl2">0 pts</span><span>Next reward at 500 pts</span></div>
+            <div class="lp-row"><span>Total Spent</span><span id="lp-spent">₱0</span></div>
+            <div class="lp-row"><span>Orders</span><span id="lp-orders">0</span></div>
+            <div class="lp-row"><span>Member Since</span><span>April 2025</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="notif-wrap">
+        <button class="notif-bell" onclick="toggleNotifPanel(event)">🔔<span class="notif-dot" id="notif-dot">0</span></button>
+        <div class="notif-panel" id="notif-panel">
+          <div class="notif-head"><span class="notif-head-title">Notifications</span><button class="notif-clear" onclick="markAllRead()">Mark all as read</button></div>
+          <div class="notif-list" id="notif-list"><div class="notif-empty"><div class="notif-empty-icon">🔔</div>No notifications yet</div></div>
+        </div>
+      </div>
+      <div class="user-chip" onclick="cPage('profile',document.getElementById('cnav-profile'))">
+        <div class="user-avatar" id="c-avatar">JD</div>
+        <span id="c-username" style="color:rgba(255,255,255,0.8)">Jane</span>
+      </div>
+      <button class="logout-btn-c" onclick="doLogout()">Log out</button>
+    </div>
+  </nav>
+
+  <!-- SHOP PAGE -->
+  <div id="cpage-shop" class="c-page active">
+    <!-- HERO -->
+    <div class="hero-banner">
+      <div class="hero-content">
+        <div class="hero-eyebrow"><div class="hero-eyebrow-line"></div><div class="hero-badge">CDO's Trusted Beauty Brand</div></div>
+        <div class="hero-title">Your Beauty,<br><span>Elevated.</span></div>
+        <div class="hero-subtitle">Discover GV Cosmetics — premium hair care, alcohol products, body care & more. Quality you can trust, prices you'll love.</div>
+        <div class="hero-cta">
+          <button class="btn-hero-primary" onclick="document.querySelector('.cat-strip').scrollIntoView({behavior:'smooth'})">Shop Collection</button>
+          <button class="btn-hero-secondary" onclick="cPage('orders',document.getElementById('cnav-orders'))">Track Orders</button>
+        </div>
+      </div>
+      <div class="hero-right">
+        <div class="hero-carousel-wrap">
+          <div class="hero-carousel">
+            <button class="hc-arrow" onclick="heroCarouselMove(-1);if(typeof startHeroAutoplay==='function')startHeroAutoplay();">‹</button>
+
+            <div class="hc-slides" id="hc-slides">
+              <!-- Slide 1: Michael Isopropyl Alcohol -->
+              <div class="hc-slide active" onclick="setCat('Alcohol');closeAllMega()">
+                <img src="images/michael-isopropyl-alcohol-sizes.png" alt="Michael Isopropyl Alcohol">
+                <div class="hc-tag">Best Seller</div>
+                <div class="hc-slide-name">Michael Isopropyl Alcohol</div>
+              </div>
+
+              <!-- Slide 2: Hair Spray -->
+              <div class="hc-slide" onclick="setCat('Hair Care');closeAllMega()">
+                <img src="images/m-hair-spray-pump-pink-125ml.jpg" alt="M Hair Spray Pump">
+                <div class="hc-tag">New Arrival</div>
+                <div class="hc-slide-name">M Hair Spray Pump</div>
+              </div>
+
+              <!-- Slide 3: Shine N' Free Gel -->
+              <div class="hc-slide" onclick="setCat('Hair Care');closeAllMega()">
+                <img src="images/shine-n-free-styling-gel-100ml.png" alt="Shine N' Free Styling Gel">
+                <div class="hc-tag">Fan Favorite</div>
+                <div class="hc-slide-name">Shine N' Free Styling Gel</div>
+              </div>
+
+              <!-- Slide 4: Michael Baby Cologne -->
+              <div class="hc-slide" onclick="setCat('Body Care');closeAllMega()">
+                <img src="images/michael-baby-cologne-duo-150ml.jpg" alt="Michael Baby Cologne">
+                <div class="hc-tag">Body Care Pick</div>
+                <div class="hc-slide-name">Michael Baby Cologne</div>
+              </div>
+
+              <!-- Slide 5: Great Love Cotton Buds -->
+              <div class="hc-slide" onclick="setCat('Personal Care');closeAllMega()">
+                <img src="images/great-love-cotton-buds-108s.jpg" alt="Great Love Cotton Buds">
+                <div class="hc-tag">Personal Care Pick</div>
+                <div class="hc-slide-name">Great Love Cotton Buds</div>
+              </div>
+            </div>
+
+            <button class="hc-arrow" onclick="heroCarouselMove(1);if(typeof startHeroAutoplay==='function')startHeroAutoplay();">›</button>
+          </div>
+          <div class="hc-dots" id="hc-dots">
+            <button class="hc-dot active" onclick="heroCarouselGoto(0);if(typeof startHeroAutoplay==='function')startHeroAutoplay();"></button>
+            <button class="hc-dot" onclick="heroCarouselGoto(1);if(typeof startHeroAutoplay==='function')startHeroAutoplay();"></button>
+            <button class="hc-dot" onclick="heroCarouselGoto(2);if(typeof startHeroAutoplay==='function')startHeroAutoplay();"></button>
+            <button class="hc-dot" onclick="heroCarouselGoto(3);if(typeof startHeroAutoplay==='function')startHeroAutoplay();"></button>
+            <button class="hc-dot" onclick="heroCarouselGoto(4);if(typeof startHeroAutoplay==='function')startHeroAutoplay();"></button>
+          </div>
+        </div>
+        <div class="hero-stats">
+          <div class="hero-stat"><div class="hero-stat-num">29+</div><div class="hero-stat-lbl">Products</div></div>
+          <div class="hero-stat"><div class="hero-stat-num">1K+</div><div class="hero-stat-lbl">Customers</div></div>
+          <div class="hero-stat"><div class="hero-stat-num">CDO</div><div class="hero-stat-lbl">Branch</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PROMO BANNERS -->
+    <div class="promo-row">
+      <div class="promo-card main" onclick="setCat('Hair Care',document.querySelector('[data-cat=\'Hair Care\']'));setTimeout(()=>{const g=document.querySelector('.shop-layout');if(g)g.scrollIntoView({behavior:'smooth'});},80)">
+        <div class="promo-emoji">💆</div>
+        <div class="promo-title">Hair Care Collection</div>
+        <div class="promo-sub">Gels, Sachets & Hair Sprays</div>
+        <span class="promo-btn">Shop Hair Care →</span>
+      </div>
+      <div class="promo-card sec1" onclick="setCat('Alcohol',document.querySelector('[data-cat=\'Alcohol\']'));setTimeout(()=>{const g=document.querySelector('.shop-layout');if(g)g.scrollIntoView({behavior:'smooth'});},80)">
+        <div class="promo-emoji">🧴</div>
+        <div class="promo-title">Alcohol Range</div>
+        <div class="promo-sub">70% & 40% variants</div>
+        <span class="promo-btn">Shop Now →</span>
+      </div>
+      <div class="promo-card sec2" onclick='setCat("Body Care",document.querySelector("[data-cat=\"Body Care\"]"));setTimeout(()=>{const g=document.querySelector(".shop-layout");if(g)g.scrollIntoView({behavior:"smooth"});},80)'>
+        <div class="promo-emoji">🌺</div>
+        <div class="promo-title">Body Care</div>
+        <div class="promo-sub">Sprays, Cologne & More</div>
+        <span class="promo-btn">Explore →</span>
+      </div>
+    </div>
+
+    <!-- CATEGORY STRIP -->
+    <div class="cat-strip" id="cat-row"></div>
+
+    <!-- SEARCH -->
+    <div class="shop-search-wrap">
+      <div class="shop-search-bar">
+        <span class="search-icon">🔍</span>
+        <input id="search-inp" placeholder="Search GV products — gel, alcohol, spray, cologne..." oninput="renderProducts()">
+      </div>
+    </div>
+
+    <!-- RECOMMENDATIONS -->
+    <div class="reco-section" id="reco-wrap" style="display:none">
+      <div class="reco-section-head">⭐ Recommended For You</div>
+      <div class="reco-strip" id="reco-strip"></div>
+    </div>
+
+    <!-- SHOP LAYOUT: Filter + Products -->
+    <div class="shop-layout">
+      <div class="filter-panel">
+                  <div style="font-size:13px;font-weight:600;color:var(--dark);margin-bottom:14px;display:flex;align-items:center;gap:6px">🔧 Filters</div>
+          <div class="filter-section">
+            <h4>Shop Layout</h4>
+            <div class="rating-filter-row">
+              <button class="mc-link" style="padding:6px 0" onclick="setCatAll()">🏪 All Products</button>
+              <button class="mc-link" style="padding:6px 0" onclick="filterBadge('hot')">🔥 Best Sellers</button>
+              <button class="mc-link" style="padding:6px 0" onclick="filterBadge('new')">✨ New Arrivals</button>
+              <button class="mc-link" style="padding:6px 0" onclick="triggerFlashSale()">🏷️ Sale Items</button>
+            </div>
+          </div>
+          <div class="filter-section">
+            <h4>Price Range</h4>
+          <div class="price-range-wrap">
+            <input type="range" id="filter-price-max" min="1" max="1000" value="1000" step="1" oninput="updatePriceDisplay();renderProducts()">
+            <div class="price-display">Up to: <b id="price-display-val">₱1,000</b></div>
+          </div>
+        </div>
+        <div class="filter-section">
+          <h4>Min. Rating</h4>
+          <div class="rating-filter-row">
+            <label class="rf-option"><input type="radio" name="rating-filter" value="0" checked onchange="renderProducts()"> Any</label>
+            <label class="rf-option"><input type="radio" name="rating-filter" value="3" onchange="renderProducts()"> <span class="rf-stars">⭐⭐⭐</span>&amp; up</label>
+            <label class="rf-option"><input type="radio" name="rating-filter" value="4" onchange="renderProducts()"> <span class="rf-stars">⭐⭐⭐⭐</span>&amp; up</label>
+          </div>
+        </div>
+        <button class="filter-clear" onclick="clearFilters()">✕ Clear Filters</button>
+      </div>
+      <div class="shop-main">
+        <div class="section-head"><h2 id="section-title">All Products</h2><a onclick="setCatAll()">View all →</a></div>
+        <div class="products-grid" id="products-grid"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CART -->
+  <div id="cpage-cart" class="c-page">
+    <div class="cart-wrap"><h2>Your Cart 🛒</h2><div id="cart-body"></div></div>
+  </div>
+
+  <!-- CHECKOUT -->
+  <div id="cpage-checkout" class="c-page"><div id="checkout-body"></div></div>
+
+  <!-- ORDERS -->
+  <div id="cpage-orders" class="c-page">
+    <div class="orders-wrap"><h2>My Orders 📦</h2><div id="orders-body"></div></div>
+  </div>
+
+  <!-- PROFILE -->
+  <div id="cpage-profile" class="c-page">
+    <div class="profile-wrap">
+      <h2>My Profile</h2>
+      <div class="profile-section">
+        <div class="ps-header">
+          <div class="ps-avatar" id="prof-avatar-big">JD</div>
+          <div class="ps-info"><h3 id="prof-display-name">Jane Dela Cruz</h3><p id="prof-display-email">customer@gv.com</p><p style="font-size:12px;color:var(--rose);margin-top:3px" id="prof-display-since">Member since April 2025</p></div>
+        </div>
+        <div class="ps-title"><span>👤</span> Personal Information</div>
+        <div class="pf-row"><div class="pf-field"><label>First Name</label><input id="pf-fname" value="Jane"></div><div class="pf-field"><label>Last Name</label><input id="pf-lname" value="Dela Cruz"></div></div>
+        <div class="pf-row"><div class="pf-field"><label>Email</label><input id="pf-email" value="customer@gv.com" readonly></div><div class="pf-field"><label>Phone</label><input id="pf-phone" value="09171234567"></div></div>
+        <button class="save-btn" onclick="savePersonalInfo()">Save Changes</button>
+      </div>
+      <div class="profile-section">
+        <div class="ps-title"><span>📍</span> Delivery Addresses</div>
+        <div id="addr-list"></div>
+        <div style="font-size:13px;font-weight:600;color:var(--text);margin:14px 0 12px">Add New Address</div>
+        <div class="pf-row"><div class="pf-field"><label>Full Name</label><input id="addr-name" placeholder="Recipient name"></div><div class="pf-field"><label>Phone</label><input id="addr-phone" placeholder="09XXXXXXXXX"></div></div>
+        <div class="pf-row single"><div class="pf-field"><label>Street / Barangay</label><input id="addr-street" placeholder="123 Rizal St., Brgy. Poblacion"></div></div>
+        <div class="pf-row"><div class="pf-field"><label>City</label>
+          <div class="loc-input-wrap" onclick="openLocationPicker('addr')">
+            <input id="addr-city" class="loc-readonly" readonly placeholder="Tap to select">
+            <span class="loc-chevron">▾</span>
+          </div>
+        </div><div class="pf-field"><label>Province</label>
+          <div class="loc-input-wrap" onclick="openLocationPicker('addr')">
+            <input id="addr-province" class="loc-readonly" readonly placeholder="Auto-filled">
+            <span class="loc-chevron">▾</span>
+          </div>
+        </div></div>
+        <div class="pf-row"><div class="pf-field"><label>ZIP Code</label><input id="addr-zip" placeholder="9000"></div><div class="pf-field"><label>Label</label><select id="addr-label"><option>Home</option><option>Work</option><option>Other</option></select></div></div>
+        <button class="save-btn" onclick="addAddress()">Add Address</button>
+      </div>
+      <div class="profile-section">
+        <div class="ps-title"><span>🔒</span> Change Password</div>
+        <div class="pf-row single"><div class="pf-field"><label>Current Password</label><input type="password" id="pwd-current" placeholder="Enter current password"></div></div>
+        <div class="pf-row single"><div class="pf-field"><label>New Password</label><input type="password" id="pwd-new" placeholder="At least 6 characters" oninput="checkStrength()"><div class="pwd-strength" id="pwd-strength" style="width:0;background:#ccc"></div><span id="pwd-strength-label" style="font-size:11px;color:var(--muted);margin-top:3px;display:block"></span></div></div>
+        <div class="pf-row single"><div class="pf-field"><label>Confirm Password</label><input type="password" id="pwd-confirm" placeholder="Repeat new password"></div></div>
+        <button class="save-btn" onclick="changePassword()">Update Password</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- WISHLIST PAGE -->
+  <div id="cpage-wishlist" class="c-page">
+  <div class="wishlist-wrap">
+    <h2>❤️ My Wishlist</h2>
+    <div id="wishlist-body"></div>
+  </div>
+</div>
+  <!-- MY STATS PAGE -->
+  <div id="cpage-stats" class="c-page">
+    <div class="stats-wrap">
+      <h2>📊 My Purchase Stats</h2>
+      <div id="stats-body"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ ADMIN ═══════════ -->
+<div id="screen-admin" class="hidden">
+  <nav class="a-topbar">
+    <span class="a-brand">GV Cosmetics <span>Admin Panel</span></span>
+    <div class="a-topbar-right">
+      <div class="notif-wrap">
+        <button class="notif-bell" onclick="toggleAdminNotifPanel(event)">🔔<span class="notif-dot" id="admin-notif-dot">0</span></button>
+        <div class="notif-panel" id="admin-notif-panel">
+          <div class="notif-head"><span class="notif-head-title">Delivery Confirmations</span><button class="notif-clear" onclick="markAllAdminNotifsRead()">Mark all as read</button></div>
+          <div class="notif-list" id="admin-notif-list"><div class="notif-empty">No delivery confirmations yet</div></div>
+        </div>
+      </div>
+      <div class="a-user"><div class="a-avatar">AD</div><span>Administrator</span></div>
+      <button class="logout-btn-a" onclick="doLogout()">Log out</button>
+    </div>
+  </nav>
+  <div class="a-layout">
+    <div class="a-sidebar">
+      <div class="a-section">Overview</div>
+      <div class="a-item on" onclick="aPanel('dashboard',this)">Dashboard</div>
+      <div class="a-item" onclick="aPanel('analytics',this)">Analytics</div>
+      <div class="a-section">Manage</div>
+      <div class="a-item" onclick="aPanel('products',this)">Products</div>
+      <div class="a-item" id="a-item-orders" onclick="aPanel('orders',this)">Orders</div>
+      <div class="a-item" onclick="aPanel('customers',this)">Customers</div>
+      <div class="a-item" onclick="aPanel('approvals',this)">Pending Approvals</div>
+      <div class="a-item" onclick="aPanel('inventory',this)">Inventory</div>
+    </div>
+    <div class="a-main">
+      <div id="ap-dashboard" class="a-panel on"></div>
+      <div id="ap-analytics" class="a-panel"></div>
+      <div id="ap-products" class="a-panel"></div>
+      <div id="ap-orders" class="a-panel"></div>
+      <div id="ap-customers" class="a-panel"></div>
+      <div id="ap-approvals" class="a-panel"></div>
+      <div id="ap-inventory" class="a-panel"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+let heroCarouselIndex = 0;
+function heroCarouselShow(idx){
+  const slides = document.querySelectorAll('#hc-slides .hc-slide');
+  const dots = document.querySelectorAll('#hc-dots .hc-dot');
+  if(!slides.length) return;
+  heroCarouselIndex = (idx + slides.length) % slides.length;
+  slides.forEach((s,i)=>s.classList.toggle('active', i===heroCarouselIndex));
+  dots.forEach((d,i)=>d.classList.toggle('active', i===heroCarouselIndex));
+}
+function heroCarouselMove(dir){ heroCarouselShow(heroCarouselIndex + dir); }
+function heroCarouselGoto(idx){ heroCarouselShow(idx); }
+
+function hardCloseMega(){
+  if (typeof closeAllMega === 'function') closeAllMega();
+  document.querySelectorAll('.mega-panel').forEach(p => { p.style.display = 'none'; });
+  const overlay = document.getElementById('mega-overlay');
+  if (overlay) overlay.style.display = 'none';
+  setTimeout(() => {
+    document.querySelectorAll('.mega-panel').forEach(p => { p.style.display = ''; });
+    if (overlay) overlay.style.display = '';
+  }, 700);
+}
+
+function scrollToShopResults(){
+  let tries = 0;
+  const attempt = () => {
+    tries++;
+    const grid = document.getElementById('products-grid');
+    const layout = document.querySelector('.shop-layout');
+    if (grid && grid.children.length > 0 && layout) {
+      layout.scrollIntoView({behavior:'smooth', block:'start'});
+    } else if (tries < 15) {
+      requestAnimationFrame(attempt);
+    } else if (layout) {
+      layout.scrollIntoView({behavior:'smooth', block:'start'});
+    }
+  };
+  requestAnimationFrame(attempt);
+}
+</script>
+<script src="script.js"></script>
+<script>
+// Override setCat so the in-page category strip only filters products
+// in place, without re-triggering page navigation or losing scroll position.
+function setCat(cat, el){
+  activeCat = cat;
+  document.querySelectorAll('.cat-strip-item').forEach(x=>{
+    x.classList.toggle('on', x.dataset.cat===cat || x.textContent.trim().indexOf(cat)!==-1);
+  });
+  if (typeof renderProducts === 'function') renderProducts();
+  const title = document.getElementById('section-title');
+  if (title) title.textContent = (cat==='All' ? 'All Products' : cat);
+}
+function setCatAll(){
+  activeCat = 'All';
+  document.querySelectorAll('.cat-strip-item').forEach(x=>{
+    x.classList.toggle('on', x.dataset.cat==='All');
+  });
+  if (typeof renderProducts === 'function') renderProducts();
+  const title = document.getElementById('section-title');
+  if (title) title.textContent = 'All Products';
+}
+</script>
+
+<script>
+// Auto-advance the hero carousel through its 5 fixed slides every 5 seconds.
+// Pauses while the mouse is hovering over the carousel.
+let heroAutoplayTimer = null;
+
+function startHeroAutoplay(){
+  stopHeroAutoplay();
+  heroAutoplayTimer = setInterval(() => { heroCarouselMove(1); }, 5000);
+}
+function stopHeroAutoplay(){
+  if (heroAutoplayTimer) clearInterval(heroAutoplayTimer);
+  heroAutoplayTimer = null;
+}
+
+document.addEventListener('DOMContentLoaded', function(){
+  const carousel = document.querySelector('.hero-carousel');
+  if (carousel){
+    carousel.addEventListener('mouseenter', stopHeroAutoplay);
+    carousel.addEventListener('mouseleave', startHeroAutoplay);
+  }
+  startHeroAutoplay();
+});
+</script>
+
+<!-- ═══ INFO MODALS ═══ -->
+<div class="info-modal-bg" id="info-modal-bg" onclick="closeModal(event)">
+  <div class="info-modal" id="info-modal">
+    <div class="im-header">
+      <div class="im-title" id="im-title">Title</div>
+      <button class="im-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="im-body" id="im-body"></div>
+  </div>
+</div>
+
+<!-- ═══ PRODUCT QUICK VIEW MODAL ═══ -->
+<div class="pm-modal-bg" id="pm-modal-bg" onclick="closeProductModal(event)">
+  <div class="pm-modal" id="pm-modal">
+    <button class="im-close pm-close" onclick="closeProductModal()">✕</button>
+    <div class="pm-body" id="pm-body"></div>
+  </div>
+</div>
+
+<!-- ═══ DELIVERY PROOF PHOTO — hidden camera/file input (customer) ═══ -->
+<input type="file" id="delivery-photo-input" accept="image/*" capture="environment" style="display:none" onchange="handleDeliveryPhotoInput(event)">
+
+<!-- ═══ DELIVERY PHOTO VIEWER MODAL (admin review + customer's own confirmation) ═══ -->
+<div class="photo-modal-bg" id="photo-modal-bg" onclick="closePhotoModal(event)">
+  <div class="photo-modal" id="photo-modal">
+    <button class="im-close pm-close" onclick="closePhotoModal()">✕</button>
+    <div id="photo-modal-body"></div>
+  </div>
+</div>
+
+<!-- ═══ DELIVERY LOCATION PICKER (Region → Province → City → Barangay) ═══ -->
+<div class="loc-overlay" id="loc-overlay" onclick="if(event.target===this)closeLocationPicker()">
+  <div class="loc-panel">
+    <div class="loc-panel-head">
+      <h3>Select Delivery Location</h3>
+      <button class="loc-panel-close" onclick="closeLocationPicker()">✕</button>
+    </div>
+    <div class="loc-tabs" id="loc-tabs"></div>
+    <div class="loc-list" id="loc-list"></div>
+    <div class="loc-footer">
+      <button class="loc-btn-cancel" onclick="closeLocationPicker()">Cancel</button>
+      <button class="loc-btn-done" id="loc-btn-done" onclick="locApply()" disabled>Done</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ CANCEL ORDER MODAL (customer, Pending orders only) ═══ -->
+<div class="cancel-modal-bg" id="cancel-modal-bg" onclick="if(event.target===this)closeCancelModal()">
+  <div class="cancel-modal">
+    <h3>Cancel this order?</h3>
+    <p>Let us know why — it helps us improve.</p>
+    <select id="cancel-reason-select" onchange="onCancelReasonChange()">
+      <option>Changed my mind</option>
+      <option>Found a better price or product elsewhere</option>
+      <option>Ordered by mistake</option>
+      <option>Taking too long to process</option>
+      <option>Other</option>
+    </select>
+    <textarea id="cancel-reason-other" placeholder="Please specify..." style="display:none"></textarea>
+    <div class="cancel-modal-actions">
+      <button class="btn-keep" onclick="closeCancelModal()">Keep Order</button>
+      <button class="btn-confirm-cancel" onclick="confirmCancelOrder()">Cancel Order</button>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
