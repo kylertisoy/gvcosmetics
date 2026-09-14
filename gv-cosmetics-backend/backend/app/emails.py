@@ -121,6 +121,22 @@ def send_delivery_notification_email(to_email: str, to_name: str, order_number: 
     return _send_email(to_email, to_name, f"Order {order_number} delivered", html)
 
 
+def send_verification_email(to_email: str, to_name: str, code: str) -> bool:
+    """Sent right after registration (and again on 'resend code'), with the
+    6-digit code the customer types back into the app to prove they own
+    this email address."""
+    html = f"""
+    <div style="font-family:sans-serif;max-width:480px;margin:auto">
+      <h2 style="color:#C2607E">Verify your email</h2>
+      <p>Hi {to_name}, thanks for signing up! Enter this code in the app to verify your email:</p>
+      <p style="font-size:32px;font-weight:bold;letter-spacing:6px;text-align:center;
+                background:#F7F2EF;padding:16px;border-radius:8px;color:#1C1C1A">{code}</p>
+      <p>This code expires in 15 minutes. If you didn't request this, you can ignore this email.</p>
+      <p style="color:#8A8580;font-size:12px">— GV Cosmetics</p>
+    </div>"""
+    return _send_email(to_email, to_name, "Verify your GV Cosmetics email", html)
+
+
 def send_custom_email(to_email: str, to_name: str, subject: str, message: str) -> bool:
     """Used by the admin panel's Customer Analysis > Email button, where an
     admin writes a free-form subject and message for a specific customer."""

@@ -25,12 +25,22 @@ class UserOut(BaseModel):
     role: str
     loyalty_points: int
     approval_status: str = "approved"
+    email_verified: bool = True
     created_at: Optional[datetime] = None
 
 
 class RegisterOut(BaseModel):
     detail: str
     approval_status: str
+
+
+class VerifyEmailIn(BaseModel):
+    email: EmailStr
+    code: str
+
+
+class ResendCodeIn(BaseModel):
+    email: EmailStr
 
 
 class Token(BaseModel):

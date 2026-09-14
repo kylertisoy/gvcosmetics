@@ -9,7 +9,11 @@ DATABASE_URL = os.getenv(
     "DATABASE_URL", "postgresql://gvci:gvci_pass@localhost:5432/gvci_db"
 )
 
-engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+engine = create_engine(
+    DATABASE_URL,
+    pool_pre_ping=True,
+    execution_options={"schema_translate_map": {None: "public"}},
+)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 

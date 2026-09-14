@@ -32,6 +32,9 @@ class User(Base):
     initials = Column(String, nullable=True)
     role = Column(Enum(Role), default=Role.customer, nullable=False)
     approval_status = Column(String, default="pending", nullable=False)  # 'pending' | 'approved' | 'rejected' — only enforced for customers, see auth.login()
+    email_verified = Column(Boolean, default=False, nullable=False)  # only enforced for customers, see auth.login()
+    verification_code = Column(String, nullable=True)
+    verification_code_expires = Column(DateTime, nullable=True)
     loyalty_points = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
 

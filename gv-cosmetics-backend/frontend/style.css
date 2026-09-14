@@ -723,6 +723,32 @@ body{font-family:'Jost',sans-serif;background:var(--v-bg);color:var(--v-ink);fon
 .btn-cancel-order{background:none;border:1.5px solid #E5E0D8;color:var(--red,#DC2626);padding:9px 14px;font-size:12.5px;font-weight:500;border-radius:7px;cursor:pointer;transition:background .15s}
 .btn-cancel-order:hover{background:#FEF2F2}
 
+/* ═══ VERIFY EMAIL MODAL ═══ */
+.verify-modal-bg{position:fixed;inset:0;background:rgba(28,28,26,0.6);backdrop-filter:blur(4px);z-index:2200;display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity .25s;padding:24px}
+.verify-modal-bg.open{opacity:1;pointer-events:all}
+.verify-modal{background:#FFFEFB;max-width:400px;width:100%;border-radius:12px;position:relative;transform:translateY(18px) scale(.98);transition:transform .28s cubic-bezier(.4,0,.2,1);box-shadow:0 32px 80px rgba(28,28,26,0.22);padding:24px}
+.verify-modal-bg.open .verify-modal{transform:translateY(0) scale(1)}
+.verify-modal h3{font-size:16px;font-weight:600;color:var(--dark,#1C1C1A);margin-bottom:6px}
+.verify-modal p{font-size:12.5px;color:var(--muted,#8A8580);margin-bottom:16px}
+.verify-modal input{width:100%;border:1.5px solid #E5E0D8;border-radius:8px;padding:10px 12px;font-size:13px;font-family:'Jost',sans-serif;color:var(--dark,#1C1C1A);outline:none;margin-bottom:12px}
+.verify-modal input#verify-code-input{letter-spacing:6px;font-size:18px;text-align:center;font-weight:600}
+.verify-modal-actions{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:4px;flex-wrap:wrap}
+.verify-modal-actions .btn-resend{background:none;border:none;color:var(--rose,#C2607E);font-size:12px;cursor:pointer;text-decoration:underline;padding:6px 0}
+.verify-modal-actions .btn-verify-actions{display:flex;gap:8px;margin-left:auto}
+.verify-modal-actions .btn-keep,.email-modal-actions .btn-keep{background:none;border:1px solid #E5E0D8;padding:9px 16px;font-size:12.5px;border-radius:7px;cursor:pointer;color:var(--dark,#1C1C1A)}
+.verify-modal-actions .btn-do-verify,.email-modal-actions .btn-do-verify{background:var(--dark,#1C1C1A);color:#fff;border:none;padding:9px 18px;font-size:12.5px;border-radius:7px;cursor:pointer}
+
+/* ═══ EMAIL CUSTOMER MODAL ═══ */
+.email-modal-bg{position:fixed;inset:0;background:rgba(28,28,26,0.6);backdrop-filter:blur(4px);z-index:2200;display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity .25s;padding:24px}
+.email-modal-bg.open{opacity:1;pointer-events:all}
+.email-modal{background:#FFFEFB;max-width:440px;width:100%;border-radius:12px;position:relative;transform:translateY(18px) scale(.98);transition:transform .28s cubic-bezier(.4,0,.2,1);box-shadow:0 32px 80px rgba(28,28,26,0.22);padding:24px}
+.email-modal-bg.open .email-modal{transform:translateY(0) scale(1)}
+.email-modal h3{font-size:16px;font-weight:600;color:var(--dark,#1C1C1A);margin-bottom:6px}
+.email-modal p{font-size:12.5px;color:var(--muted,#8A8580);margin-bottom:16px;word-break:break-word}
+.email-modal input,.email-modal textarea{width:100%;border:1.5px solid #E5E0D8;border-radius:8px;padding:10px 12px;font-size:13px;font-family:'Jost',sans-serif;color:var(--dark,#1C1C1A);outline:none;margin-bottom:12px}
+.email-modal textarea{resize:none;height:110px}
+.email-modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:4px}
+
 .ni-icon.delivered{background:#F0FBF4;color:#16693B}
 
 /* ═══ CHECKOUT FORM VALIDATION ═══ */

@@ -64,6 +64,11 @@ def seed():
                     name=a["name"],
                     initials=a["initials"],
                     role=a["role"],
+                    # Seeded accounts are demo/admin data, not real signups —
+                    # they should never be gated by the verify-email/approval
+                    # flow that only applies to people who register normally.
+                    approval_status="approved",
+                    email_verified=True,
                 ))
             print(f"Seeded {len(ACCOUNTS)} accounts (customer@gv.com / 1234, admin@gv.com / admin123).")
         else:

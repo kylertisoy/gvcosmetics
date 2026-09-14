@@ -352,14 +352,44 @@ async function doRegister(){
 
   // Registration no longer returns a token/user — new customer accounts are
   // created as 'pending' and need an admin to approve them before they can log in.
-  showToast('✅ '+(data.detail||'Account created. Please wait for admin approval.'));
-
-  // reset the signup form + switch back to login view for next time
+  // reset the signup form + open the verify-email modal, pre-filled
   document.getElementById('su-name').value='';
   document.getElementById('su-email').value='';
   document.getElementById('su-pass').value='';
   document.getElementById('su-pass2').value='';
   showLoginForm();
+  showToast('✅ '+(data.detail||'Account created. Check your email for a verification code.'));
+  openVerifyModal(email);
+}
+
+/* ═══ VERIFY EMAIL (registration + standalone "resend" from login) ═══ */
+function openVerifyModal(email){
+  document.getElementById('verify-email-input').value=email||'';
+  document.getElementById('verify-code-input').value='';
+  document.getElementById('verify-modal-bg').classList.add('open');
+}
+function closeVerifyModal(){
+  document.getElementById('verify-modal-bg').classList.remove('open');
+}
+async function submitVerifyCode(){
+  const email=document.getElementById('verify-email-input').value.trim().toLowerCase();
+  const code=document.getElementById('verify-code-input').value.trim();
+  if(!email){ showToast('Please enter your email.'); return; }
+  if(!/^\d{6}$/.test(code)){ showToast('Enter the 6-digit code from your email.'); return; }
+  let data;
+  try {
+    data = await apiFetch('/auth/verify-email', { method:'POST', body: JSON.stringify({ email, code }) });
+  } catch(e){ showToast('⚠️ '+e.message); return; }
+  closeVerifyModal();
+  showToast('✅ '+(data.detail||'Email verified!'));
+}
+async function resendVerifyCode(){
+  const email=document.getElementById('verify-email-input').value.trim().toLowerCase();
+  if(!email){ showToast('Please enter your email first.'); return; }
+  try {
+    await apiFetch('/auth/resend-verification', { method:'POST', body: JSON.stringify({ email }) });
+  } catch(e){ showToast('⚠️ '+e.message); return; }
+  showToast('📧 A new code has been sent to your email.');
 }
 
 async function doLogin(){
@@ -987,12 +1017,13 @@ async function placeOrder(grand){
   const prov=document.getElementById('co-prov').value.trim();
   const addrFull=addr+', '+city+', '+prov;
   const items=Object.keys(cart).map(id=>({product_id:parseInt(id),quantity:cart[id]}));
+  const paymentMethod=document.getElementById('co-pay').value; // 'cod' | 'gcash' | 'card' | 'maya'
 
   let order;
   try {
     order = await apiFetch('/orders', {
       method: 'POST',
-      body: JSON.stringify({ items, shipping_name: (fn+' '+ln).trim(), shipping_address: addrFull })
+      body: JSON.stringify({ items, shipping_name: (fn+' '+ln).trim(), shipping_address: addrFull, payment_method: paymentMethod })
     });
   } catch(e) {
     showToast('⚠️ '+e.message);
@@ -1006,11 +1037,39 @@ async function placeOrder(grand){
   updateLoyaltyDisplay();
   buildRecommendations();
 
+  // Cash on Delivery: nothing to pay online, show the confirmation right away.
+  if(paymentMethod==='cod'){
+    showOrderSuccessScreen(order, addrFull);
+    return;
+  }
+
+  // GCash / Card / Maya: hand off to PayMongo's hosted checkout page. The
+  // order already exists (payment_status='pending'); PayMongo's webhook
+  // flips it to 'paid' once the customer actually completes payment there.
+  document.getElementById('checkout-body').innerHTML=`
+    <div class="success-wrap">
+      <div class="success-icon">💳</div>
+      <h2>Redirecting to payment...</h2>
+      <p>Order <b style="color:var(--rose-dk)">${order.order_number}</b> has been created.<br>Taking you to a secure PayMongo page to complete your ${paymentMethod.toUpperCase()} payment.</p>
+    </div>`;
+  try {
+    const session = await apiFetch('/orders/'+order.id+'/checkout-session', {
+      method: 'POST',
+      body: JSON.stringify({ payment_method: paymentMethod })
+    });
+    window.location.href = session.checkout_url;
+  } catch(e){
+    showToast('⚠️ Could not start payment: '+e.message);
+    showOrderSuccessScreen(order, addrFull, true);
+  }
+}
+
+function showOrderSuccessScreen(order, addrFull, paymentSetupFailed){
   document.getElementById('checkout-body').innerHTML=`
     <div class="success-wrap">
       <div class="success-icon">🎉</div>
       <h2>Order Placed!</h2>
-      <p>Order <b style="color:var(--rose-dk)">${order.order_number}</b> is confirmed!<br>Delivering to:<br><b style="color:var(--rose)">${addrFull}</b><br><br>We'll notify you when your order status changes.</p>
+      <p>Order <b style="color:var(--rose-dk)">${order.order_number}</b> is confirmed!<br>Delivering to:<br><b style="color:var(--rose)">${addrFull}</b><br><br>${paymentSetupFailed?'We couldn\'t start the online payment step — you can retry payment from My Orders, or contact us.':'We\'ll notify you when your order status changes.'}</p>
       <button class="cont-btn" onclick="cPage('shop',document.getElementById('cnav-shop'))">Continue Shopping 💄</button>
     </div>`;
 }
@@ -1561,6 +1620,35 @@ async function updateOrderStatus(orderId,newStatus){
 }
 
 /* CUSTOMERS */
+/* ═══ EMAIL CUSTOMER (admin, Customer Analysis) ═══ */
+let EMAIL_TARGET=null; // { email, name }
+function openEmailModal(email, name){
+  EMAIL_TARGET={email, name};
+  document.getElementById('email-modal-to').textContent='To: '+name+' <'+email+'>';
+  document.getElementById('email-subject-input').value='';
+  document.getElementById('email-message-input').value='';
+  document.getElementById('email-modal-bg').classList.add('open');
+}
+function closeEmailModal(){
+  document.getElementById('email-modal-bg').classList.remove('open');
+  EMAIL_TARGET=null;
+}
+async function submitCustomerEmail(){
+  if(!EMAIL_TARGET) return;
+  const subject=document.getElementById('email-subject-input').value.trim();
+  const message=document.getElementById('email-message-input').value.trim();
+  if(!subject||!message){ showToast('Please fill in both subject and message.'); return; }
+  try {
+    await apiFetch('/customers/send-email', {
+      method:'POST',
+      body: JSON.stringify({ email: EMAIL_TARGET.email, name: EMAIL_TARGET.name, subject, message })
+    });
+  } catch(e){ showToast('⚠️ '+e.message); return; }
+  const sentTo=EMAIL_TARGET.name;
+  closeEmailModal();
+  showToast('✅ Email sent to '+sentTo);
+}
+
 function buildCustomers(){
   const loyal=CUSTOMERS_DATA.filter(c=>c.seg==='Loyal');
   const occ=CUSTOMERS_DATA.filter(c=>c.seg==='Occasional');
@@ -1580,7 +1668,7 @@ function buildCustomers(){
           <td>${c.orders}</td>
           <td>₱${c.total.toLocaleString()}</td>
           <td><span class="badge ${c.seg==='Loyal'?'bg-green':c.seg==='Occasional'?'bg-amber':'bg-blue'}">${c.seg}</span></td>
-          <td><button class="btn-edit" onclick="showToast('Email sent to ${c.name}')">Email</button></td>
+          <td><button class="btn-edit" onclick="openEmailModal('${c.email.replace(/'/g,"\\'")}','${c.name.replace(/'/g,"\\'")}')">Email</button></td>
         </tr>`).join('')}
       </tbody></table></div>`;
 }
@@ -1895,6 +1983,14 @@ function setCatAll(){
   });
 })();
 
+/* Scrolls the shop page down to the category strip / product grid, skipping
+   past the hero banner and promo cards — used by the "Products" nav button
+   so it visibly differs from "Home" (which lands at the very top). */
+function scrollToShopResults(){
+  const target=document.getElementById('cat-row');
+  if(target) target.scrollIntoView({behavior:'smooth', block:'start'});
+}
+
 function closeAllMega(){
   document.querySelectorAll('.mn-item').forEach(function(item){
     item.classList.remove('open');
@@ -2078,4 +2174,24 @@ async function tryRestoreSession(){
     buildAdminAll();
   }
 }
+/* Runs once on page load. If the browser was just redirected back from
+   PayMongo's hosted checkout (see payments.py's success_url/cancel_url),
+   show the customer what happened and clean the URL so refreshing doesn't
+   re-trigger the message. */
+function checkPaymentRedirect(){
+  const params=new URLSearchParams(window.location.search);
+  const status=params.get('payment');
+  const orderNum=params.get('order');
+  if(!status) return;
+  if(status==='success'){
+    showToast('✅ Payment received for order '+(orderNum||'')+'! Thank you.');
+  } else if(status==='cancelled'){
+    showToast('Payment was cancelled. Your order is saved — you can retry payment from My Orders.');
+  }
+  const url=new URL(window.location.href);
+  url.searchParams.delete('payment');
+  url.searchParams.delete('order');
+  window.history.replaceState({}, document.title, url.pathname + url.search);
+}
+checkPaymentRedirect();
 tryRestoreSession();

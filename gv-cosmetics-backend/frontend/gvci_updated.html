@@ -53,6 +53,7 @@
       <div class="err-msg" id="err-msg">❌ Invalid email or password. Please try again.</div>
       <button class="login-btn" onclick="doLogin()">Sign In →</button>
       <div class="login-switch">New here? <a href="#" onclick="showSignup();return false;">Create an account</a></div>
+      <div class="login-switch"><a href="#" onclick="openVerifyModal('');return false;">Need to verify your email?</a></div>
       <div class="login-footer">GV Cosmetics Inc. © 2025 · Cagayan de Oro Branch</div>
     </div>
     <div id="signup-form-wrap" class="hidden">
@@ -77,56 +78,11 @@
     <span class="c-brand">GV <span>Cosmetics</span></span>
     <div class="c-nav-center">
 
-      <!-- HOME mega -->
-      <div class="mn-item">
-        <button class="c-nav-link active" id="cnav-shop" onclick="cPage('shop',this)">Home <span class="mn-chevron">▾</span></button>
-        <div class="mega-panel mega-home">
-          <div class="mega-inner">
-            <!-- Explore -->
-            <div>
-              <div class="mc-head">Explore</div>
-              <button class="mc-link" onclick="heroCarouselShow(1);closeAllMega()"><span class="mc-icon">✨</span>New Arrivals<span class="mc-tag new">New</span></button>
-              <button class="mc-link" onclick="heroCarouselShow(0);closeAllMega()"><span class="mc-icon">🔥</span>Best Sellers<span class="mc-tag hot">Hot</span></button>
-              <button class="mc-link" onclick="heroCarouselShow(2);closeAllMega()"><span class="mc-icon">⚡</span>Flash Sale</button>
-              <button class="mc-link" onclick="heroCarouselShow(3);closeAllMega()"><span class="mc-icon">🌟</span>Featured Collections</button>
-            </div>
-            <div class="mc-divider"></div>
-            <!-- Quick Links -->
-            <div>
-              <div class="mc-head">Quick Links</div>
-              <button class="mc-link" onclick="cPage('orders',document.getElementById('cnav-orders'));closeAllMega()"><span class="mc-icon">📦</span>Track My Order</button>
-              <button class="mc-link" onclick="cPage('wishlist',document.getElementById('cnav-wishlist'));closeAllMega()"><span class="mc-icon">❤️</span>My Wishlist</button>
-              <button class="mc-link" onclick="cPage('stats',document.getElementById('cnav-stats'));closeAllMega()"><span class="mc-icon">📊</span>Purchase Stats</button>
-              <button class="mc-link" onclick="cPage('profile',document.getElementById('cnav-profile'));closeAllMega()"><span class="mc-icon">👤</span>My Profile</button>
-              <button class="mc-link" onclick="cPage('cart',document.getElementById('cnav-cart'));closeAllMega()"><span class="mc-icon">🛒</span>My Cart</button>
-            </div>
-          </div>
-        </div>
-      </div>
+      <!-- HOME (direct link, no dropdown) -->
+      <button class="c-nav-link active" id="cnav-shop" onclick="cPage('shop',this)">Home</button>
 
-      <!-- PRODUCTS mega -->
-      <div class="mn-item">
-        <button class="c-nav-link" id="cnav-shop2" onclick="cPage('shop',document.getElementById('cnav-shop'));closeAllMega()">Products <span class="mn-chevron">▾</span></button>
-        <div class="mega-panel mega-products">
-          <div class="mega-inner">
-            <!-- Shop by Category -->
-            <div>
-              <div class="mc-head">Shop by Category</div>
-              <div class="mc-cat-grid">
-                <button class="mc-cat-pill" onclick="setCat('Hair Care');cPage('shop',document.getElementById('cnav-shop'));heroCarouselShow(1);hardCloseMega();scrollToShopResults()"><span class="cp-icon">💈</span>Hair Care</button>
-                <button class="mc-cat-pill" onclick="setCat('Body Care');cPage('shop',document.getElementById('cnav-shop'));heroCarouselShow(3);hardCloseMega();scrollToShopResults()"><span class="cp-icon">🧴</span>Body Care</button>
-                <button class="mc-cat-pill" onclick="setCat('Alcohol');cPage('shop',document.getElementById('cnav-shop'));heroCarouselShow(0);hardCloseMega();scrollToShopResults()"><span class="cp-icon">💧</span>Alcohol</button>
-                <button class="mc-cat-pill" onclick="setCat('Personal Care');cPage('shop',document.getElementById('cnav-shop'));heroCarouselShow(4);hardCloseMega();scrollToShopResults()"><span class="cp-icon">🤍</span>Personal Care</button>
-              </div>
-              <div style="margin-top:18px"><div class="mc-head">Product Details</div></div>
-              <button class="mc-link" onclick="openModal('description');closeAllMega()"><span class="mc-icon">📋</span>Product Description</button>
-              <button class="mc-link" onclick="openModal('ingredients');closeAllMega()"><span class="mc-icon">🧪</span>Ingredients</button>
-              <button class="mc-link" onclick="openModal('howtouse');closeAllMega()"><span class="mc-icon">📖</span>How to Use</button>
-              <button class="mc-link" onclick="openModal('benefits');closeAllMega()"><span class="mc-icon">💚</span>Benefits</button>
-            </div>
-          </div>
-        </div>
-      </div>
+      <!-- PRODUCTS (direct link, no dropdown — jumps straight to the product grid) -->
+      <button class="c-nav-link" id="cnav-shop2" onclick="cPage('shop',document.getElementById('cnav-shop'));scrollToShopResults()">Products</button>
 
       <!-- right-side utility links -->
       <button class="c-nav-link" id="cnav-wishlist" onclick="cPage('wishlist',this)">Wishlist <span class="wishlist-nav-badge" id="wl-badge">0</span></button>
@@ -163,7 +119,7 @@
         </div>
       </div>
 
-      <button class="c-nav-link" id="cnav-stats" onclick="cPage('stats',this)" style="display:none">My Stats</button>
+      <button class="c-nav-link" id="cnav-stats" onclick="cPage('stats',this)">My Stats</button>
       <button class="c-nav-link" id="cnav-profile" onclick="cPage('profile',this)" style="display:none">Profile</button>
 
     </div>
@@ -611,6 +567,37 @@ document.addEventListener('DOMContentLoaded', function(){
     <div class="cancel-modal-actions">
       <button class="btn-keep" onclick="closeCancelModal()">Keep Order</button>
       <button class="btn-confirm-cancel" onclick="confirmCancelOrder()">Cancel Order</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ VERIFY EMAIL MODAL ═══ -->
+<div class="verify-modal-bg" id="verify-modal-bg" onclick="if(event.target===this)closeVerifyModal()">
+  <div class="verify-modal">
+    <h3>Verify your email</h3>
+    <p>Enter the email you signed up with and the 6-digit code we sent you.</p>
+    <input type="email" id="verify-email-input" placeholder="you@example.com">
+    <input type="text" id="verify-code-input" placeholder="000000" maxlength="6" inputmode="numeric">
+    <div class="verify-modal-actions">
+      <button class="btn-resend" onclick="resendVerifyCode()">Resend Code</button>
+      <div class="btn-verify-actions">
+        <button class="btn-keep" onclick="closeVerifyModal()">Cancel</button>
+        <button class="btn-do-verify" onclick="submitVerifyCode()">Verify</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ EMAIL CUSTOMER MODAL (admin, Customer Analysis) ═══ -->
+<div class="email-modal-bg" id="email-modal-bg" onclick="if(event.target===this)closeEmailModal()">
+  <div class="email-modal">
+    <h3>Email Customer</h3>
+    <p id="email-modal-to"></p>
+    <input type="text" id="email-subject-input" placeholder="Subject">
+    <textarea id="email-message-input" placeholder="Write your message..."></textarea>
+    <div class="email-modal-actions">
+      <button class="btn-keep" onclick="closeEmailModal()">Cancel</button>
+      <button class="btn-do-verify" onclick="submitCustomerEmail()">Send</button>
     </div>
   </div>
 </div>
