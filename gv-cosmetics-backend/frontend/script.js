@@ -325,6 +325,29 @@ function showLoginForm(){
   document.getElementById('login-form-wrap').classList.remove('hidden');
 }
 
+/* ═══ NAME FIELDS: letters only (spaces, hyphens, apostrophes still allowed
+   for names like "Dela Cruz" or "O'Brien") — strips anything else as it's
+   typed or pasted, so numbers simply can't end up in a name field. ═══ */
+function restrictToLetters(e){
+  const el=e.target;
+  const start=el.selectionStart, end=el.selectionEnd;
+  const cleaned=el.value.replace(/[^A-Za-z\s'-]/g,'');
+  if(cleaned!==el.value){
+    const removedBefore=el.value.slice(0,start).length - el.value.slice(0,start).replace(/[^A-Za-z\s'-]/g,'').length;
+    el.value=cleaned;
+    const pos=Math.max(0,start-removedBefore);
+    el.setSelectionRange(pos,pos);
+  }
+}
+function attachLetterOnlyFields(ids){
+  ids.forEach(id=>{
+    const el=document.getElementById(id);
+    if(el) el.addEventListener('input', restrictToLetters);
+  });
+}
+// Static fields present at page load: signup name, profile first/last name, new-address name
+attachLetterOnlyFields(['su-name','pf-fname','pf-lname','addr-name']);
+
 async function doRegister(){
   const name=document.getElementById('su-name').value.trim();
   const email=document.getElementById('su-email').value.trim().toLowerCase();
@@ -352,44 +375,14 @@ async function doRegister(){
 
   // Registration no longer returns a token/user — new customer accounts are
   // created as 'pending' and need an admin to approve them before they can log in.
-  // reset the signup form + open the verify-email modal, pre-filled
+  showToast('✅ '+(data.detail||'Account created. Please wait for admin approval.'));
+
+  // reset the signup form + switch back to login view for next time
   document.getElementById('su-name').value='';
   document.getElementById('su-email').value='';
   document.getElementById('su-pass').value='';
   document.getElementById('su-pass2').value='';
   showLoginForm();
-  showToast('✅ '+(data.detail||'Account created. Check your email for a verification code.'));
-  openVerifyModal(email);
-}
-
-/* ═══ VERIFY EMAIL (registration + standalone "resend" from login) ═══ */
-function openVerifyModal(email){
-  document.getElementById('verify-email-input').value=email||'';
-  document.getElementById('verify-code-input').value='';
-  document.getElementById('verify-modal-bg').classList.add('open');
-}
-function closeVerifyModal(){
-  document.getElementById('verify-modal-bg').classList.remove('open');
-}
-async function submitVerifyCode(){
-  const email=document.getElementById('verify-email-input').value.trim().toLowerCase();
-  const code=document.getElementById('verify-code-input').value.trim();
-  if(!email){ showToast('Please enter your email.'); return; }
-  if(!/^\d{6}$/.test(code)){ showToast('Enter the 6-digit code from your email.'); return; }
-  let data;
-  try {
-    data = await apiFetch('/auth/verify-email', { method:'POST', body: JSON.stringify({ email, code }) });
-  } catch(e){ showToast('⚠️ '+e.message); return; }
-  closeVerifyModal();
-  showToast('✅ '+(data.detail||'Email verified!'));
-}
-async function resendVerifyCode(){
-  const email=document.getElementById('verify-email-input').value.trim().toLowerCase();
-  if(!email){ showToast('Please enter your email first.'); return; }
-  try {
-    await apiFetch('/auth/resend-verification', { method:'POST', body: JSON.stringify({ email }) });
-  } catch(e){ showToast('⚠️ '+e.message); return; }
-  showToast('📧 A new code has been sent to your email.');
 }
 
 async function doLogin(){
@@ -970,6 +963,7 @@ function openCheckout(grand){
     const el=document.getElementById(id);
     if(el) el.addEventListener('input',()=>clearFieldError(id));
   });
+  attachLetterOnlyFields(['co-fn','co-ln']);
   cPage('checkout',null);
 }
 
@@ -1016,20 +1010,60 @@ async function placeOrder(grand){
   const city=document.getElementById('co-city').value.trim();
   const prov=document.getElementById('co-prov').value.trim();
   const addrFull=addr+', '+city+', '+prov;
+  const payMethod=document.getElementById('co-pay').value;
   const items=Object.keys(cart).map(id=>({product_id:parseInt(id),quantity:cart[id]}));
-  const paymentMethod=document.getElementById('co-pay').value; // 'cod' | 'gcash' | 'card' | 'maya'
 
   let order;
   try {
     order = await apiFetch('/orders', {
       method: 'POST',
-      body: JSON.stringify({ items, shipping_name: (fn+' '+ln).trim(), shipping_address: addrFull, payment_method: paymentMethod })
+      body: JSON.stringify({ items, shipping_name: (fn+' '+ln).trim(), shipping_address: addrFull })
     });
   } catch(e) {
+    // Order was never created — cart is untouched, customer just stays on checkout.
     showToast('⚠️ '+e.message);
     return;
   }
 
+  // Cash on Delivery needs no payment step — confirm immediately, same as before.
+  if(payMethod==='cod'){
+    await finishCheckoutSuccess(order, addrFull);
+    return;
+  }
+
+  // GCash / Card / Maya: create the PayMongo checkout session and hand the
+  // customer off to PayMongo's hosted payment page.
+  let session;
+  try {
+    session = await apiFetch(`/orders/${order.id}/checkout-session`, {
+      method: 'POST',
+      body: JSON.stringify({ payment_method: payMethod })
+    });
+  } catch(e) {
+    // Payment could not even start. Undo the order so it doesn't sit around
+    // as an orphaned "pending" record, leave the cart exactly as it was
+    // (it was never cleared), and send the customer back to their cart
+    // instead of stranding them on a broken checkout page.
+    try {
+      await apiFetch('/orders/'+order.id+'/cancel', {
+        method: 'POST',
+        body: JSON.stringify({ reason: 'Payment session could not be created' })
+      });
+    } catch(e2) { /* best-effort cleanup — nothing more we can do here */ }
+    showToast('⚠️ Could not start payment (' + e.message + '). Your items are still in your cart.');
+    cPage('cart', document.getElementById('cnav-cart'));
+    renderCart();
+    return;
+  }
+
+  // Session created successfully — now it's safe to clear the cart and go pay.
+  cart={};clearCartStorage();updatePill();
+  window.location.href = session.checkout_url;
+}
+
+/* Shared "order confirmed" success flow (currently only reached by Cash on
+   Delivery — GCash/Card/Maya orders finish on PayMongo's own success page). */
+async function finishCheckoutSuccess(order, addrFull){
   cart={};clearCartStorage();updatePill();
   await loadProducts(); // stock changed
   try { const me = await apiFetch('/auth/me'); loyaltyPoints = me.loyalty_points; } catch(e){}
@@ -1037,39 +1071,11 @@ async function placeOrder(grand){
   updateLoyaltyDisplay();
   buildRecommendations();
 
-  // Cash on Delivery: nothing to pay online, show the confirmation right away.
-  if(paymentMethod==='cod'){
-    showOrderSuccessScreen(order, addrFull);
-    return;
-  }
-
-  // GCash / Card / Maya: hand off to PayMongo's hosted checkout page. The
-  // order already exists (payment_status='pending'); PayMongo's webhook
-  // flips it to 'paid' once the customer actually completes payment there.
-  document.getElementById('checkout-body').innerHTML=`
-    <div class="success-wrap">
-      <div class="success-icon">💳</div>
-      <h2>Redirecting to payment...</h2>
-      <p>Order <b style="color:var(--rose-dk)">${order.order_number}</b> has been created.<br>Taking you to a secure PayMongo page to complete your ${paymentMethod.toUpperCase()} payment.</p>
-    </div>`;
-  try {
-    const session = await apiFetch('/orders/'+order.id+'/checkout-session', {
-      method: 'POST',
-      body: JSON.stringify({ payment_method: paymentMethod })
-    });
-    window.location.href = session.checkout_url;
-  } catch(e){
-    showToast('⚠️ Could not start payment: '+e.message);
-    showOrderSuccessScreen(order, addrFull, true);
-  }
-}
-
-function showOrderSuccessScreen(order, addrFull, paymentSetupFailed){
   document.getElementById('checkout-body').innerHTML=`
     <div class="success-wrap">
       <div class="success-icon">🎉</div>
       <h2>Order Placed!</h2>
-      <p>Order <b style="color:var(--rose-dk)">${order.order_number}</b> is confirmed!<br>Delivering to:<br><b style="color:var(--rose)">${addrFull}</b><br><br>${paymentSetupFailed?'We couldn\'t start the online payment step — you can retry payment from My Orders, or contact us.':'We\'ll notify you when your order status changes.'}</p>
+      <p>Order <b style="color:var(--rose-dk)">${order.order_number}</b> is confirmed!<br>Delivering to:<br><b style="color:var(--rose)">${addrFull}</b><br><br>We'll notify you when your order status changes.</p>
       <button class="cont-btn" onclick="cPage('shop',document.getElementById('cnav-shop'))">Continue Shopping 💄</button>
     </div>`;
 }
@@ -1620,35 +1626,6 @@ async function updateOrderStatus(orderId,newStatus){
 }
 
 /* CUSTOMERS */
-/* ═══ EMAIL CUSTOMER (admin, Customer Analysis) ═══ */
-let EMAIL_TARGET=null; // { email, name }
-function openEmailModal(email, name){
-  EMAIL_TARGET={email, name};
-  document.getElementById('email-modal-to').textContent='To: '+name+' <'+email+'>';
-  document.getElementById('email-subject-input').value='';
-  document.getElementById('email-message-input').value='';
-  document.getElementById('email-modal-bg').classList.add('open');
-}
-function closeEmailModal(){
-  document.getElementById('email-modal-bg').classList.remove('open');
-  EMAIL_TARGET=null;
-}
-async function submitCustomerEmail(){
-  if(!EMAIL_TARGET) return;
-  const subject=document.getElementById('email-subject-input').value.trim();
-  const message=document.getElementById('email-message-input').value.trim();
-  if(!subject||!message){ showToast('Please fill in both subject and message.'); return; }
-  try {
-    await apiFetch('/customers/send-email', {
-      method:'POST',
-      body: JSON.stringify({ email: EMAIL_TARGET.email, name: EMAIL_TARGET.name, subject, message })
-    });
-  } catch(e){ showToast('⚠️ '+e.message); return; }
-  const sentTo=EMAIL_TARGET.name;
-  closeEmailModal();
-  showToast('✅ Email sent to '+sentTo);
-}
-
 function buildCustomers(){
   const loyal=CUSTOMERS_DATA.filter(c=>c.seg==='Loyal');
   const occ=CUSTOMERS_DATA.filter(c=>c.seg==='Occasional');
@@ -1668,7 +1645,7 @@ function buildCustomers(){
           <td>${c.orders}</td>
           <td>₱${c.total.toLocaleString()}</td>
           <td><span class="badge ${c.seg==='Loyal'?'bg-green':c.seg==='Occasional'?'bg-amber':'bg-blue'}">${c.seg}</span></td>
-          <td><button class="btn-edit" onclick="openEmailModal('${c.email.replace(/'/g,"\\'")}','${c.name.replace(/'/g,"\\'")}')">Email</button></td>
+          <td><button class="btn-edit" onclick="showToast('Email sent to ${c.name}')">Email</button></td>
         </tr>`).join('')}
       </tbody></table></div>`;
 }
@@ -1983,14 +1960,6 @@ function setCatAll(){
   });
 })();
 
-/* Scrolls the shop page down to the category strip / product grid, skipping
-   past the hero banner and promo cards — used by the "Products" nav button
-   so it visibly differs from "Home" (which lands at the very top). */
-function scrollToShopResults(){
-  const target=document.getElementById('cat-row');
-  if(target) target.scrollIntoView({behavior:'smooth', block:'start'});
-}
-
 function closeAllMega(){
   document.querySelectorAll('.mn-item').forEach(function(item){
     item.classList.remove('open');
@@ -2145,6 +2114,27 @@ async function doLogin(){
   }
 }
 
+/* ═══ PAYMENT REDIRECT (customer landing back here from PayMongo's checkout page) ═══ */
+function handlePaymentRedirect(){
+  const params = new URLSearchParams(window.location.search);
+  const status = params.get('payment');
+  const orderNum = params.get('order');
+  if(!status) return;
+
+  if(status==='success'){
+    showToast('✅ Payment received for order ' + (orderNum||'') + '! We\'ll notify you as it\'s processed.');
+    if(typeof loadOrders==='function') loadOrders().then(()=>{ if(typeof renderOrders==='function') renderOrders(); }).catch(()=>{});
+  } else if(status==='cancelled'){
+    showToast('⚠️ Payment was cancelled for order ' + (orderNum||'') + '. Your order is saved — you can retry payment from My Orders.');
+  }
+
+  // Strip the payment params so refreshing the page doesn't re-trigger this toast
+  params.delete('payment');
+  params.delete('order');
+  const clean = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
+  window.history.replaceState({}, document.title, clean);
+}
+
 async function tryRestoreSession(){
   if(!authToken)return;
   let acc;
@@ -2174,24 +2164,4 @@ async function tryRestoreSession(){
     buildAdminAll();
   }
 }
-/* Runs once on page load. If the browser was just redirected back from
-   PayMongo's hosted checkout (see payments.py's success_url/cancel_url),
-   show the customer what happened and clean the URL so refreshing doesn't
-   re-trigger the message. */
-function checkPaymentRedirect(){
-  const params=new URLSearchParams(window.location.search);
-  const status=params.get('payment');
-  const orderNum=params.get('order');
-  if(!status) return;
-  if(status==='success'){
-    showToast('✅ Payment received for order '+(orderNum||'')+'! Thank you.');
-  } else if(status==='cancelled'){
-    showToast('Payment was cancelled. Your order is saved — you can retry payment from My Orders.');
-  }
-  const url=new URL(window.location.href);
-  url.searchParams.delete('payment');
-  url.searchParams.delete('order');
-  window.history.replaceState({}, document.title, url.pathname + url.search);
-}
-checkPaymentRedirect();
-tryRestoreSession();
+tryRestoreSession().then(handlePaymentRedirect);
