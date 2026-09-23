@@ -348,6 +348,28 @@ function attachLetterOnlyFields(ids){
 // Static fields present at page load: signup name, profile first/last name, new-address name
 attachLetterOnlyFields(['su-name','pf-fname','pf-lname','addr-name']);
 
+/* ═══ PHONE FIELDS: numbers only, no letters — strips anything else as
+   it's typed or pasted (a leading "+" for country codes is still allowed). ═══ */
+function restrictToDigits(e){
+  const el=e.target;
+  const start=el.selectionStart;
+  const cleaned=el.value.replace(/[^\d+]/g,'').replace(/(?!^)\+/g,'');
+  if(cleaned!==el.value){
+    const removedBefore=el.value.slice(0,start).length - el.value.slice(0,start).replace(/[^\d+]/g,'').replace(/(?!^)\+/g,'').length;
+    el.value=cleaned;
+    const pos=Math.max(0,start-removedBefore);
+    el.setSelectionRange(pos,pos);
+  }
+}
+function attachDigitOnlyFields(ids){
+  ids.forEach(id=>{
+    const el=document.getElementById(id);
+    if(el) el.addEventListener('input', restrictToDigits);
+  });
+}
+// Static field present at page load: new-address phone
+attachDigitOnlyFields(['addr-phone']);
+
 async function doRegister(){
   const name=document.getElementById('su-name').value.trim();
   const email=document.getElementById('su-email').value.trim().toLowerCase();
@@ -914,7 +936,6 @@ function delCart(id){delete cart[id];saveCartToStorage();updatePill();renderCart
 
 function openCheckout(grand){
   const defAddr=addresses.find(a=>a.isDefault)||addresses[0];
-  const addrStr=defAddr?`${defAddr.street}, ${defAddr.city}`:'No address saved';
   const keys=Object.keys(cart);
   document.getElementById('checkout-body').innerHTML=`
     <div class="checkout-wrap">
@@ -935,23 +956,15 @@ function openCheckout(grand){
         <div class="fg" id="fg-fn"><label>First Name *</label><input id="co-fn" value="${displayName.split(' ')[0]}"><div class="fg-err">First name is required.</div></div>
         <div class="fg" id="fg-ln"><label>Last Name *</label><input id="co-ln" value="${displayName.split(' ').slice(1).join(' ')}"><div class="fg-err">Last name is required.</div></div>
       </div>
-      <div class="fg" id="fg-ph"><label>Phone *</label><input id="co-ph" value="${addresses[0]?.phone||''}"><div class="fg-err">Phone number is required.</div></div>
-      <div class="fg" id="fg-addr"><label>Delivery Address *</label><input id="co-addr" value="${addrStr}"><div class="fg-err">Delivery address is required.</div></div>
-      <div class="form-2col">
-        <div class="fg" id="fg-city"><label>City *</label>
-          <div class="loc-input-wrap" onclick="openLocationPicker('checkout')">
-            <input id="co-city" class="loc-readonly" readonly placeholder="Tap to select" value="${defAddr?.city||''}">
-            <span class="loc-chevron">▾</span>
-          </div>
-          <div class="fg-err">City is required.</div>
-        </div>
-        <div class="fg" id="fg-prov"><label>Province *</label>
-          <div class="loc-input-wrap" onclick="openLocationPicker('checkout')">
-            <input id="co-prov" class="loc-readonly" readonly placeholder="Auto-filled" value="${defAddr?.province||''}">
-            <span class="loc-chevron">▾</span>
-          </div>
-          <div class="fg-err">Province is required.</div>
-        </div>
+      <div class="fg" id="fg-ph"><label>Phone *</label><input id="co-ph" inputmode="numeric" value="${defAddr?.phone||''}"><div class="fg-err">Phone number is required.</div></div>
+      <div class="fg" id="fg-addr">
+        <label>Delivery Address *</label>
+        <select id="co-addr-select" onchange="onCheckoutAddressChange()">${buildCheckoutAddressOptions(defAddr?.id)}</select>
+        <input type="hidden" id="co-addr">
+        <input type="hidden" id="co-city">
+        <input type="hidden" id="co-prov">
+        ${addresses.length ? '' : `<div style="font-size:12px;margin-top:6px"><a href="#" onclick="cPage('profile',document.getElementById('cnav-profile'));return false;">+ Add a delivery address in your profile</a></div>`}
+        <div class="fg-err">Please select a delivery address.</div>
       </div>
       <div class="fg"><label>Payment Method</label>
         <select id="co-pay"><option value="cod">Cash on Delivery</option><option value="gcash">GCash</option><option value="card">Credit/Debit Card</option><option value="maya">Maya</option></select>
@@ -959,16 +972,52 @@ function openCheckout(grand){
       <button class="place-btn" onclick="placeOrder(${grand})">Place Order — ₱${grand.toLocaleString('en-PH',{minimumFractionDigits:2})} →</button>
     </div>`;
   // Clear a field's error state as soon as the customer starts fixing it
-  ['co-fn','co-ln','co-ph','co-addr','co-city','co-prov'].forEach(id=>{
+  ['co-fn','co-ln','co-ph'].forEach(id=>{
     const el=document.getElementById(id);
     if(el) el.addEventListener('input',()=>clearFieldError(id));
   });
   attachLetterOnlyFields(['co-fn','co-ln']);
+  attachDigitOnlyFields(['co-ph']);
+  onCheckoutAddressChange(); // populate the hidden address/city/province fields from the default selection
   cPage('checkout',null);
 }
 
+/* Builds the <option> list for the checkout's saved-address dropdown */
+function buildCheckoutAddressOptions(selectedId){
+  if(!addresses.length){
+    return `<option value="">No saved address yet</option>`;
+  }
+  return addresses.map(a=>{
+    const label=(a.label?a.label+' — ':'')+a.street+', '+a.city+', '+a.province;
+    const isSelected = selectedId!=null ? a.id===selectedId : a.isDefault;
+    return `<option value="${a.id}" ${isSelected?'selected':''}>${label}</option>`;
+  }).join('');
+}
+
+/* Fires when the customer picks a saved address from the checkout dropdown
+   (and once on page load) — fills the hidden address/city/province fields
+   and the phone number automatically, so nothing needs to be typed. */
+function onCheckoutAddressChange(){
+  const sel=document.getElementById('co-addr-select');
+  const addrHidden=document.getElementById('co-addr');
+  const cityHidden=document.getElementById('co-city');
+  const provHidden=document.getElementById('co-prov');
+  if(!sel||!addrHidden) return;
+  const a=addresses.find(x=>String(x.id)===sel.value);
+  if(a){
+    addrHidden.value=a.street;
+    cityHidden.value=a.city;
+    provHidden.value=a.province;
+    const phInput=document.getElementById('co-ph');
+    if(phInput && !phInput.value.trim() && a.phone) phInput.value=a.phone;
+  } else {
+    addrHidden.value=''; cityHidden.value=''; provHidden.value='';
+  }
+  clearFieldError('co-addr');
+}
+
 /* Maps a checkout input id to its wrapping .fg field id */
-const CHECKOUT_FIELD_MAP={ 'co-fn':'fg-fn','co-ln':'fg-ln','co-ph':'fg-ph','co-addr':'fg-addr','co-city':'fg-city','co-prov':'fg-prov' };
+const CHECKOUT_FIELD_MAP={ 'co-fn':'fg-fn','co-ln':'fg-ln','co-ph':'fg-ph','co-addr':'fg-addr' };
 
 function clearFieldError(inputId){
   const wrap=document.getElementById(CHECKOUT_FIELD_MAP[inputId]);
