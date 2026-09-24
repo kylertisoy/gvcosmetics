@@ -1,4 +1,5 @@
 import os
+import re
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -20,6 +21,21 @@ ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "1440
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+
+
+def validate_password_strength(password: str) -> None:
+    """
+    Server-side mirror of the frontend's signup rule. Raises HTTPException(400)
+    if the password doesn't qualify. Call this BEFORE hash_password() in the
+    /auth/register endpoint so a weak password never reaches the database,
+    even if someone bypasses the website and calls the API directly.
+    """
+    if len(password) < 6:
+        raise HTTPException(400, "Password must be at least 6 characters.")
+    if not re.search(r"[A-Z]", password):
+        raise HTTPException(400, "Password must include at least 1 capital letter.")
+    if not re.search(r"[^A-Za-z0-9]", password):
+        raise HTTPException(400, "Password must include at least 1 special character (e.g. ! @ # $ %).")
 
 
 def hash_password(password: str) -> str:
