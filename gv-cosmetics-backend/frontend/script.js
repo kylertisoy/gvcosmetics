@@ -370,6 +370,20 @@ function attachDigitOnlyFields(ids){
 // Static field present at page load: new-address phone
 attachDigitOnlyFields(['addr-phone']);
 
+/* ═══ SIGNUP PASSWORD HINT: shows the rule up front (1 capital + 1 special
+   character required) instead of the customer only finding out after an
+   error, and updates the placeholder to match. ═══ */
+(function addSignupPasswordHint(){
+  const passField=document.getElementById('su-pass');
+  if(!passField) return;
+  passField.placeholder='At least 6 chars, 1 capital & 1 special character';
+  const hint=document.createElement('div');
+  hint.id='su-pass-hint';
+  hint.style.cssText='font-size:11px;color:var(--muted);margin-top:4px;line-height:1.5';
+  hint.textContent='Must be at least 6 characters and include at least 1 capital letter (A-Z) and 1 special character (e.g. ! @ # $ %). Accounts that don\'t meet this won\'t be created.';
+  passField.insertAdjacentElement('afterend', hint);
+})();
+
 async function doRegister(){
   const name=document.getElementById('su-name').value.trim();
   const email=document.getElementById('su-email').value.trim().toLowerCase();
@@ -381,6 +395,8 @@ async function doRegister(){
 
   if(!name||!email||!pass){showErr('Please fill in all fields.');return;}
   if(pass.length<6){showErr('Password must be at least 6 characters.');return;}
+  if(!/[A-Z]/.test(pass)){showErr('Password must include at least 1 capital letter.');return;}
+  if(!/[^A-Za-z0-9]/.test(pass)){showErr('Password must include at least 1 special character (e.g. ! @ # $ %).');return;}
   if(pass!==pass2){showErr('Passwords do not match.');return;}
 
   let data;
