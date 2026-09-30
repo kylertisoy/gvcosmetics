@@ -1710,7 +1710,7 @@ function buildCustomers(){
           <td>${c.orders}</td>
           <td>₱${c.total.toLocaleString()}</td>
           <td><span class="badge ${c.seg==='Loyal'?'bg-green':c.seg==='Occasional'?'bg-amber':'bg-blue'}">${c.seg}</span></td>
-          <td><button class="btn-edit" onclick="showToast('Email sent to ${c.name}')">Email</button></td>
+          <td><button class="btn-edit" onclick="openEmailModal('${escJS(c.email)}','${escJS(c.name)}')">Email</button></td>
         </tr>`).join('')}
       </tbody></table></div>`;
 }
@@ -2088,6 +2088,56 @@ const INFO_MODAL_CONTENT = {
            <p><strong>What if a product arrives damaged?</strong><br>Please contact our support team with your order number and a photo of the item within 7 days of delivery.</p>`
   }
 };
+
+/* Escapes a value safely for embedding inside a single-quoted inline
+   onclick="..." attribute (used when building HTML strings with customer
+   data that could contain apostrophes, e.g. "O'Brien"). */
+function escJS(s){
+  return String(s==null?'':s).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+}
+
+/* ═══ EMAIL CUSTOMER MODAL (admin, Customer Analysis) ═══ */
+function openEmailModal(email, name){
+  const toEl = document.getElementById('email-modal-to');
+  toEl.textContent = `To: ${name} <${email}>`;
+  toEl.dataset.email = email;
+  toEl.dataset.name = name;
+  document.getElementById('email-subject-input').value = '';
+  document.getElementById('email-message-input').value = '';
+  document.getElementById('email-modal-bg').classList.add('open');
+}
+function closeEmailModal(){
+  document.getElementById('email-modal-bg').classList.remove('open');
+}
+async function submitCustomerEmail(){
+  const toEl = document.getElementById('email-modal-to');
+  const email = toEl.dataset.email;
+  const name = toEl.dataset.name;
+  const subject = document.getElementById('email-subject-input').value.trim();
+  const message = document.getElementById('email-message-input').value.trim();
+
+  if(!subject || !message){
+    showToast('⚠️ Please fill in both a subject and a message.');
+    return;
+  }
+
+  const btn = document.querySelector('.email-modal .btn-do-verify');
+  const originalText = btn ? btn.textContent : '';
+  if(btn){ btn.disabled = true; btn.textContent = 'Sending...'; }
+
+  try {
+    await apiFetch(`/customers/${encodeURIComponent(email)}/email`, {
+      method: 'POST',
+      body: JSON.stringify({ subject, message })
+    });
+    closeEmailModal();
+    showToast(`✅ Email sent to ${name}`);
+  } catch(e) {
+    showToast('⚠️ Could not send email: ' + e.message);
+  } finally {
+    if(btn){ btn.disabled = false; btn.textContent = originalText; }
+  }
+}
 
 function openModal(key){
   const data = INFO_MODAL_CONTENT[key];
