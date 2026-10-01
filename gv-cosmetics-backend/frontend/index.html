@@ -38,11 +38,6 @@
       <div class="lf-item"><div class="lf-dot">📦</div><div class="lf-text"><b>Track your orders</b><br>Know exactly where your package is</div></div>
       <div class="lf-item"><div class="lf-dot">🔔</div><div class="lf-text"><b>Get notified</b><br>Receive updates when your order status changes</div></div>
     </div>
-    <div class="login-hint">
-      <div class="lh-title">Demo Accounts</div>
-      <div class="lh-row"><div class="lh-dot rose"></div><div class="lh-text">Customer — <b>customer@gv.com</b> / <b>1234</b></div></div>
-      <div class="lh-row"><div class="lh-dot blue"></div><div class="lh-text">Admin — <b>admin@gv.com</b> / <b>admin123</b></div></div>
-    </div>
   </div>
   <div class="login-right">
     <div id="login-form-wrap">
@@ -53,7 +48,6 @@
       <div class="err-msg" id="err-msg">❌ Invalid email or password. Please try again.</div>
       <button class="login-btn" onclick="doLogin()">Sign In →</button>
       <div class="login-switch">New here? <a href="#" onclick="showSignup();return false;">Create an account</a></div>
-      <div class="login-switch"><a href="#" onclick="openVerifyModal('');return false;">Need to verify your email?</a></div>
       <div class="login-footer">GV Cosmetics Inc. © 2025 · Cagayan de Oro Branch</div>
     </div>
     <div id="signup-form-wrap" class="hidden">
@@ -388,7 +382,7 @@
           <div class="notif-list" id="admin-notif-list"><div class="notif-empty">No delivery confirmations yet</div></div>
         </div>
       </div>
-      <div class="a-user"><div class="a-avatar">AD</div><span>Administrator</span></div>
+      <div class="a-user" onclick="openAdminPwdModal()" style="cursor:pointer" title="Change password"><div class="a-avatar">AD</div><span>Administrator</span></div>
       <button class="logout-btn-a" onclick="doLogout()">Log out</button>
     </div>
   </nav>
@@ -572,19 +566,19 @@ document.addEventListener('DOMContentLoaded', function(){
   </div>
 </div>
 
-<!-- ═══ VERIFY EMAIL MODAL ═══ -->
-<div class="verify-modal-bg" id="verify-modal-bg" onclick="if(event.target===this)closeVerifyModal()">
-  <div class="verify-modal">
-    <h3>Verify your email</h3>
-    <p>Enter the email you signed up with and the 6-digit code we sent you.</p>
-    <input type="email" id="verify-email-input" placeholder="you@example.com">
-    <input type="text" id="verify-code-input" placeholder="000000" maxlength="6" inputmode="numeric">
-    <div class="verify-modal-actions">
-      <button class="btn-resend" onclick="resendVerifyCode()">Resend Code</button>
-      <div class="btn-verify-actions">
-        <button class="btn-keep" onclick="closeVerifyModal()">Cancel</button>
-        <button class="btn-do-verify" onclick="submitVerifyCode()">Verify</button>
-      </div>
+<!-- ═══ ADMIN CHANGE PASSWORD MODAL ═══ -->
+<div class="pwd-modal-bg" id="admin-pwd-modal-bg" onclick="if(event.target===this)closeAdminPwdModal()">
+  <div class="pwd-modal">
+    <h3>Change Password</h3>
+    <p>Update the password for this admin account.</p>
+    <input type="password" id="admin-pwd-current" placeholder="Current password">
+    <input type="password" id="admin-pwd-new" placeholder="New password (6+ chars, 1 capital, 1 special)" oninput="checkAdminPwdStrength()">
+    <div class="pwd-strength" id="admin-pwd-strength" style="width:0;background:#ccc"></div>
+    <span id="admin-pwd-strength-label" style="font-size:11px;color:var(--muted);margin-top:3px;margin-bottom:12px;display:block"></span>
+    <input type="password" id="admin-pwd-confirm" placeholder="Confirm new password">
+    <div class="pwd-modal-actions">
+      <button class="btn-keep" onclick="closeAdminPwdModal()">Cancel</button>
+      <button class="btn-do-verify" onclick="submitAdminPasswordChange()">Update Password</button>
     </div>
   </div>
 </div>
