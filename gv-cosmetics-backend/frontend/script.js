@@ -1345,6 +1345,54 @@ const PERIOD_LABELS={week:'Weekly',month:'Monthly',year:'Yearly'};
 let anTopChart=null, anTopPeriod='month', anTopMetric='units';
 let dbTopChart=null, dbTopPeriod='month', dbTopMetric='units';
 
+/* ═══ CSV EXPORT (generic helper — used by every "Export CSV" button) ═══ */
+function downloadCSV(filename, headers, rows){
+  const esc = (v) => {
+    const s = String(v==null ? '' : v);
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s;
+  };
+  const lines = [headers.map(esc).join(',')].concat(rows.map(r => r.map(esc).join(',')));
+  const csv = lines.join('\r\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function exportOrdersCSV(){
+  if(!ORDERS_DATA.length){ showToast('No orders to export.'); return; }
+  const rows = ORDERS_DATA.map(o => [o.id, o.customer, o.items, o.total, o.date, o.status]);
+  downloadCSV('gv-cosmetics-orders.csv', ['Order ID','Customer','Items','Total','Date','Status'], rows);
+  showToast('✅ Orders exported.');
+}
+
+function exportCustomersCSV(){
+  if(!CUSTOMERS_DATA.length){ showToast('No customers to export.'); return; }
+  const rows = CUSTOMERS_DATA.map(c => [c.name, c.email, c.orders, c.total, c.seg]);
+  downloadCSV('gv-cosmetics-customers.csv', ['Name','Email','Total Orders','Total Spent','Segment'], rows);
+  showToast('✅ Customer list exported.');
+}
+
+function exportInventoryCSV(){
+  if(!PRODUCTS.length){ showToast('No products to export.'); return; }
+  const rows = PRODUCTS.map(p => [p.name, p.cat, p.stock, p.stock===0?'Out of Stock':p.stock<30?'Low Stock':'In Stock']);
+  downloadCSV('gv-cosmetics-inventory.csv', ['Product','Category','Current Stock','Status'], rows);
+  showToast('✅ Inventory report exported.');
+}
+
+function exportTopProductsCSV(){
+  // NOTE: TOP_PRODUCTS_DATA is currently hardcoded sample data, not figures
+  // pulled from real orders — this exports whatever that sample data says
+  // until it's replaced with a real backend-driven report.
+  const data = TOP_PRODUCTS_DATA[anTopPeriod] || [];
+  if(!data.length){ showToast('No data to export.'); return; }
+  const rows = data.map(r => [r.name, r.cat, r.units, r.revenue, r.status]);
+  downloadCSV(`gv-cosmetics-top-products-${anTopPeriod}.csv`, ['Product','Category','Units Sold','Revenue','Status'], rows);
+  showToast('✅ Report exported.');
+}
+
 function getTopProductsSorted(period,metric){
   return [...TOP_PRODUCTS_DATA[period]].sort((a,b)=>metric==='revenue'?b.revenue-a.revenue:b.units-a.units);
 }
@@ -1486,7 +1534,7 @@ function buildAnalytics(){
       <div class="a-card"><h3>Customer Segments</h3><div style="position:relative;height:200px"><canvas id="ch-seg"></canvas></div></div>
     </div>
     <div class="a-card" style="margin-bottom:16px"><h3>Monthly Revenue 2025</h3><div style="position:relative;height:150px"><canvas id="ch-month"></canvas></div></div>
-    <div class="tbl-wrap"><div class="tbl-head"><h3>Product Performance Report (<span id="an-top-period-label">${PERIOD_LABELS[anTopPeriod]}</span>)</h3><button class="btn-add" onclick="showToast('Exporting report...')">Export CSV</button></div>
+    <div class="tbl-wrap"><div class="tbl-head"><h3>Product Performance Report (<span id="an-top-period-label">${PERIOD_LABELS[anTopPeriod]}</span>)</h3><button class="btn-add" onclick="exportTopProductsCSV()">Export CSV</button></div>
       <table class="a-table"><thead><tr><th>Product</th><th>Category</th><th>Units Sold</th><th>Revenue</th><th>Status</th></tr></thead>
       <tbody id="an-top-tbody"></tbody></table></div>`;
   anTopPeriod='month'; anTopMetric='units';
@@ -1650,7 +1698,7 @@ function buildOrders(){
       <div class="kpi"><div class="kpi-label">Processing</div><div class="kpi-val" style="color:#D97706">${proc}</div></div>
       <div class="kpi"><div class="kpi-label">Delivered</div><div class="kpi-val up">${deliv}</div></div>
     </div>
-    <div class="tbl-wrap"><div class="tbl-head"><h3>All Orders</h3><button class="btn-add" onclick="showToast('Exporting orders...')">Export CSV</button></div>
+    <div class="tbl-wrap"><div class="tbl-head"><h3>All Orders</h3><button class="btn-add" onclick="exportOrdersCSV()">Export CSV</button></div>
       <table class="a-table" style="table-layout:fixed;width:100%">
         <thead><tr><th style="width:90px">Order ID</th><th style="width:110px">Customer</th><th>Items</th><th style="width:80px">Total</th><th style="width:55px">Date</th><th style="width:90px">Status</th><th style="width:55px">Proof</th><th style="width:115px">Update Status</th></tr></thead>
         <tbody id="orders-tbody">${renderOrderRows()}</tbody>
@@ -1701,7 +1749,7 @@ function buildCustomers(){
       <div class="seg-card"><div class="seg-num" style="color:#B8944A">${occ.length}</div><div class="seg-lbl">Occasional Buyers</div><div class="seg-rule">2 to 4 orders</div></div>
       <div class="seg-card"><div class="seg-num" style="color:#4F7EF7">${nw.length}</div><div class="seg-lbl">New Customers</div><div class="seg-rule">First order only</div></div>
     </div>
-    <div class="tbl-wrap"><div class="tbl-head"><h3>Customer List</h3><button class="btn-add" onclick="showToast('Exporting customer list...')">Export CSV</button></div>
+    <div class="tbl-wrap"><div class="tbl-head"><h3>Customer List</h3><button class="btn-add" onclick="exportCustomersCSV()">Export CSV</button></div>
       <table class="a-table"><thead><tr><th>Name</th><th>Email</th><th>Total Orders</th><th>Total Spent</th><th>Segment</th><th>Actions</th></tr></thead>
       <tbody>${CUSTOMERS_DATA.map(c=>`
         <tr>
@@ -1770,7 +1818,7 @@ function buildInventory(){
       <div class="kpi"><div class="kpi-label">Total Units</div><div class="kpi-val">${totalUnits.toLocaleString()}</div></div>
     </div>
     ${lowStock.length||outStock.length?`<div style="background:#FEF2F2;border:1px solid #FECACA;border-radius:10px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:#B91C1C;font-weight:500">⚠️ ${lowStock.length} products are low on stock and ${outStock.length} are out of stock. Please reorder.</div>`:''}
-    <div class="tbl-wrap"><div class="tbl-head"><h3>Stock Levels</h3><button class="btn-add" onclick="showToast('Inventory report exported.')">Export CSV</button></div>
+    <div class="tbl-wrap"><div class="tbl-head"><h3>Stock Levels</h3><button class="btn-add" onclick="exportInventoryCSV()">Export CSV</button></div>
       <table class="a-table"><thead><tr><th>Product</th><th>Category</th><th>Current Stock</th><th>Level</th><th>Status</th><th>Reorder Qty</th><th>Action</th></tr></thead>
       <tbody id="inv-tbody">${renderInvRows()}</tbody></table></div>`;
 }
