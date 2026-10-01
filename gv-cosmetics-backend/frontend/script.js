@@ -2096,6 +2096,55 @@ function escJS(s){
   return String(s==null?'':s).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
 }
 
+/* ═══ ADMIN CHANGE PASSWORD MODAL ═══ */
+function openAdminPwdModal(){
+  document.getElementById('admin-pwd-current').value='';
+  document.getElementById('admin-pwd-new').value='';
+  document.getElementById('admin-pwd-confirm').value='';
+  document.getElementById('admin-pwd-strength').style.width='0';
+  document.getElementById('admin-pwd-strength').style.background='#ccc';
+  document.getElementById('admin-pwd-strength-label').textContent='';
+  document.getElementById('admin-pwd-modal-bg').classList.add('open');
+}
+function closeAdminPwdModal(){
+  document.getElementById('admin-pwd-modal-bg').classList.remove('open');
+}
+function checkAdminPwdStrength(){
+  const v=document.getElementById('admin-pwd-new').value;
+  const bar=document.getElementById('admin-pwd-strength');
+  const lbl=document.getElementById('admin-pwd-strength-label');
+  const pct=Math.min(v.length/10*100,100);
+  const color=pct<40?'#C87941':pct<70?'#D97706':'#16A34A';
+  const text=pct<40?'Weak':pct<70?'Moderate':'Strong';
+  bar.style.width=pct+'%';bar.style.background=color;lbl.textContent=text;lbl.style.color=color;
+}
+async function submitAdminPasswordChange(){
+  const cur=document.getElementById('admin-pwd-current').value;
+  const nw=document.getElementById('admin-pwd-new').value;
+  const cf=document.getElementById('admin-pwd-confirm').value;
+  if(!cur){showToast('❌ Please enter your current password.');return;}
+  if(nw.length<6){showToast('❌ New password must be at least 6 characters.');return;}
+  if(nw!==cf){showToast('❌ Passwords do not match.');return;}
+
+  const btn=document.querySelector('#admin-pwd-modal-bg .btn-do-verify');
+  const originalText=btn?btn.textContent:'';
+  if(btn){btn.disabled=true;btn.textContent='Updating...';}
+
+  try {
+    // Same endpoint the customer profile page uses — the backend enforces
+    // the 1-capital + 1-special-character rule regardless of role, so a
+    // weak password is rejected here too, with the server's own message.
+    await apiFetch('/auth/change-password', { method:'POST', body: JSON.stringify({ current_password: cur, new_password: nw }) });
+  } catch(e){
+    showToast('❌ '+e.message);
+    if(btn){btn.disabled=false;btn.textContent=originalText;}
+    return;
+  }
+
+  closeAdminPwdModal();
+  showToast('✅ Password updated successfully!');
+}
+
 /* ═══ EMAIL CUSTOMER MODAL (admin, Customer Analysis) ═══ */
 function openEmailModal(email, name){
   const toEl = document.getElementById('email-modal-to');
