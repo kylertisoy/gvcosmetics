@@ -1256,6 +1256,7 @@ function renderOrders(){
       ${o.status==='Pending'?`<button class="btn-cancel-order" style="width:100%;margin-top:10px" onclick="openCancelModal(${o.dbId})">Cancel Order</button>`:''}
       ${o.status==='Cancelled'&&o.cancelReason?`<div class="oc-addr" style="color:var(--red,#DC2626)">✕ Cancelled: ${o.cancelReason}</div>`:''}
       ${trackHtml}
+      ${isSettled&&isOld?`<button class="btn-cancel-order" style="width:100%;margin-top:10px;background:none;border:1px solid var(--muted,#8A8580);color:var(--muted,#8A8580)" onclick="toggleOrderExpand('${o.id}')">▲ Minimize</button>`:''}
     </div>`;
   }).join('');
 }
