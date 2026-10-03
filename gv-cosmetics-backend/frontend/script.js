@@ -83,6 +83,7 @@ function mapOrder(o) {
     items: o.items.map(i => i.product_name).join(', '),
     total: o.total,
     date: formatOrderDate(o.created_at),
+    createdAt: o.created_at,
     status: o.status,
     address: o.shipping_address,
     tracking: o.tracking_number,
@@ -1183,10 +1184,40 @@ async function confirmCancelOrder(){
   showToast('Order cancelled.');
 }
 
+/* Cancelled/Delivered orders older than 2 days collapse into a compact
+   summary row by default, so finished orders don't pile up on this page.
+   Nothing is deleted — tapping "View Details" expands it right back. */
+let expandedOrders = new Set();
+function toggleOrderExpand(orderId){
+  if(expandedOrders.has(orderId)) expandedOrders.delete(orderId);
+  else expandedOrders.add(orderId);
+  renderOrders();
+}
+function daysSinceOrder(isoDateStr){
+  if(!isoDateStr) return 0;
+  const then = new Date(isoDateStr).getTime();
+  if(isNaN(then)) return 0;
+  return (Date.now() - then) / 86400000;
+}
+
 function renderOrders(){
   const body=document.getElementById('orders-body');
   if(!myOrders.length){body.innerHTML=`<div class="empty-state"><div class="empty-icon">📦</div><h3>No orders yet</h3><p>Start shopping to see your orders here!</p><button onclick="cPage('shop',document.getElementById('cnav-shop'))">Shop Now →</button></div>`;return;}
   body.innerHTML=myOrders.map(o=>{
+    const isSettled = o.status==='Cancelled' || o.status==='Delivered';
+    const isOld = daysSinceOrder(o.createdAt) >= 2;
+    const isCollapsed = isSettled && isOld && !expandedOrders.has(o.id);
+    if(isCollapsed){
+      return `<div class="order-card order-card-collapsed">
+        <div class="oc-head"><span class="oc-id">${o.id}</span><span class="oc-date">${o.date}</span></div>
+        <div class="oc-items" style="opacity:.7">${o.items}</div>
+        <div class="oc-foot">
+          <span class="oc-price">₱${o.total.toLocaleString('en-PH',{minimumFractionDigits:2})}</span>
+          <span class="badge ${o.status==='Delivered'?'bg-green':'bg-red'}">${statusLabel(o.status)}</span>
+        </div>
+        <button class="btn-cancel-order" style="width:100%;margin-top:10px;background:none;border:1px solid var(--rose,#C2607E);color:var(--rose,#C2607E)" onclick="toggleOrderExpand('${o.id}')">View Details</button>
+      </div>`;
+    }
     const steps=[
       {label:'Order Placed',sub:'Order received & confirmed',status:'done'},
       {label:'Processing',sub:'Preparing your items',status:o.status==='Pending'?'pend':'done'},
