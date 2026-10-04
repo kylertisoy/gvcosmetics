@@ -2,7 +2,7 @@ import enum
 from datetime import datetime
 
 from sqlalchemy import (
-    Column, Integer, String, Float, Boolean, DateTime, ForeignKey, Text, Enum
+    Column, Integer, String, Float, Boolean, DateTime, Date, ForeignKey, Text, Enum
 )
 from sqlalchemy.orm import relationship
 
@@ -58,6 +58,13 @@ class Product(Base):
     badge = Column(String, default="")  # 'hot', 'new', or ''
     image_url = Column(Text, nullable=True)  # data URL (base64 JPEG) or hosted image URL
     created_at = Column(DateTime, default=datetime.utcnow)
+
+    # --- Product Lifecycle / Expiry Risk Management ---
+    # Both optional: not every product (e.g. accessories, tools) has a
+    # meaningful expiry date. Date-only (not DateTime) since the admin UI
+    # only ever collects a calendar date, not a time-of-day.
+    manufacturing_date = Column(Date, nullable=True)
+    expiry_date = Column(Date, nullable=True)
 
     order_items = relationship("OrderItem", back_populates="product")
     wishlist_items = relationship("WishlistItem", back_populates="product", cascade="all, delete-orphan")
