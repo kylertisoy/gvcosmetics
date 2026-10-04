@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import List, Optional
 
 from pydantic import BaseModel, EmailStr, ConfigDict
@@ -64,6 +64,8 @@ class ProductBase(BaseModel):
     description: str = ""
     badge: str = ""
     image_url: Optional[str] = None
+    manufacturing_date: Optional[date] = None
+    expiry_date: Optional[date] = None
 
 
 class ProductCreate(ProductBase):
@@ -79,6 +81,8 @@ class ProductUpdate(BaseModel):
     description: Optional[str] = None
     badge: Optional[str] = None
     image_url: Optional[str] = None
+    manufacturing_date: Optional[date] = None
+    expiry_date: Optional[date] = None
 
 
 class ProductOut(ProductBase):
