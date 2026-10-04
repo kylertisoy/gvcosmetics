@@ -1894,7 +1894,18 @@ function buildInventory(){
       <div class="kpi"><div class="kpi-label">⛔ Expired</div><div class="kpi-val dn">${expiredProducts.length}</div></div>
     </div>
     ${lowStock.length||outStock.length?`<div style="background:#FEF2F2;border:1px solid #FECACA;border-radius:10px;padding:12px 16px;margin-top:16px;font-size:13px;color:#B91C1C;font-weight:500">⚠️ ${lowStock.length} products are low on stock and ${outStock.length} are out of stock. Please reorder.</div>`:''}
-    ${expiredProducts.length||nearExpiryProducts.length?`<div style="background:#FEF2F2;border:1px solid #FECACA;border-radius:10px;padding:12px 16px;margin-top:10px;font-size:13px;color:#B91C1C;font-weight:500">⛔ ${expiredProducts.length} product(s) have already expired and ${nearExpiryProducts.length} are expiring within ${EXPIRY_WARNING_WINDOW_DAYS} days. Review stock before restocking or promoting these items.</div>`:''}
+    ${(()=>{
+      if(!expiredProducts.length && !nearExpiryProducts.length) return '';
+      let msg;
+      if(expiredProducts.length && nearExpiryProducts.length){
+        msg = `⛔ ${expiredProducts.length} product(s) have already expired and ${nearExpiryProducts.length} are expiring within ${EXPIRY_WARNING_WINDOW_DAYS} days.`;
+      } else if(expiredProducts.length){
+        msg = `⛔ ${expiredProducts.length} product(s) have already expired.`;
+      } else {
+        msg = `⚠️ ${nearExpiryProducts.length} product(s) are expiring within ${EXPIRY_WARNING_WINDOW_DAYS} days.`;
+      }
+      return `<div style="background:#FEF2F2;border:1px solid #FECACA;border-radius:10px;padding:12px 16px;margin-top:10px;font-size:13px;color:#B91C1C;font-weight:500">${msg} Review stock before restocking or promoting these items.</div>`;
+    })()}
     <div class="tbl-wrap" style="margin-top:16px"><div class="tbl-head"><h3>Stock Levels</h3>
         <div style="display:flex;gap:8px">
           <button class="btn-edit" onclick="toggleInvExpiryFilter()">${invExpiryFilterOn ? 'Show All Products' : '⚠️ Show Expiry Risk Only'}</button>
