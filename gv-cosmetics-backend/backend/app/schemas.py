@@ -97,6 +97,7 @@ class AddressBase(BaseModel):
     name: str
     phone: str
     street: str
+    barangay: Optional[str] = ""   # Optional so older addresses (NULL in the DB) still load
     city: str
     province: str
     zip: str
