@@ -1536,6 +1536,74 @@ function buildDashboard(){
   },80);
 }
 
+/* ANALYTICS: Revenue chart with Month + Year picker
+   Built from the real orders the admin loaded (Cancelled orders are excluded).
+   "Whole Year" = one point per month; picking a month = one point per day. */
+const MONTH_NAMES=['January','February','March','April','May','June','July','August','September','October','November','December'];
+let anRevChart=null, anRevYear=new Date().getFullYear(), anRevMonth='all';
+
+/* The API sends UTC timestamps without a 'Z'; add it so orders land in the
+   admin's local (Philippine) month/day instead of the UTC one. */
+function orderLocalDate(iso){
+  if(!iso) return null;
+  const s=/[zZ]|[+-]\d\d:?\d\d$/.test(iso)?iso:iso+'Z';
+  const d=new Date(s);
+  return isNaN(d)?null:d;
+}
+function revenueOrders(){
+  return (ORDERS_DATA||[]).filter(o=>o.status!=='Cancelled').map(o=>({total:Number(o.total)||0,date:orderLocalDate(o.createdAt)})).filter(o=>o.date);
+}
+function revenueYears(){
+  const ys=new Set(revenueOrders().map(o=>o.date.getFullYear()));
+  ys.add(new Date().getFullYear());
+  return [...ys].sort((a,b)=>b-a);
+}
+function onAnRevChange(){
+  anRevMonth=document.getElementById('an-rev-month').value;
+  anRevYear=parseInt(document.getElementById('an-rev-year').value);
+  renderAnRevenueChart();
+}
+function renderAnRevenueChart(){
+  const canvas=document.getElementById('ch-month');
+  if(!canvas) return;
+  const mSel=document.getElementById('an-rev-month'), ySel=document.getElementById('an-rev-year');
+  if(mSel) mSel.value=anRevMonth;
+  if(ySel) ySel.value=String(anRevYear);
+
+  const now=new Date(), year=anRevYear, byMonth=anRevMonth!=='all', month=byMonth?parseInt(anRevMonth):null;
+  const orders=revenueOrders().filter(o=>o.date.getFullYear()===year&&(!byMonth||o.date.getMonth()===month));
+
+  let labels,data,title;
+  if(!byMonth){
+    labels=MONTH_NAMES.map(m=>m.slice(0,3));
+    data=Array(12).fill(0);
+    orders.forEach(o=>{data[o.date.getMonth()]+=o.total;});
+    // leave future months empty so the line stops at today
+    if(year===now.getFullYear()) for(let i=now.getMonth()+1;i<12;i++) data[i]=null;
+    else if(year>now.getFullYear()) data=data.map(()=>null);
+    title='Monthly Revenue '+year;
+  } else {
+    const days=new Date(year,month+1,0).getDate();
+    labels=Array.from({length:days},(_,i)=>String(i+1));
+    data=Array(days).fill(0);
+    orders.forEach(o=>{data[o.date.getDate()-1]+=o.total;});
+    const cut=new Date(year,month,1)>now?0:(year===now.getFullYear()&&month===now.getMonth()?now.getDate():days);
+    for(let i=cut;i<days;i++) data[i]=null;
+    title='Daily Revenue — '+MONTH_NAMES[month]+' '+year;
+  }
+  const total=orders.reduce((s,o)=>s+o.total,0);
+  const t=document.getElementById('an-rev-title'); if(t) t.textContent=title;
+  const sum=document.getElementById('an-rev-sum');
+  if(sum) sum.textContent=`Total: ₱${total.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})} · ${orders.length} order${orders.length===1?'':'s'}`;
+
+  if(anRevChart) anRevChart.destroy();
+  anRevChart=new Chart(canvas,{type:'line',
+    data:{labels,datasets:[{data,borderColor:'#4F7EF7',backgroundColor:'rgba(79,126,247,0.08)',tension:0.4,fill:true,label:'Revenue',pointBackgroundColor:'#4F7EF7',pointRadius:byMonth?3:4}]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>'₱'+Number(c.parsed.y||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})}}},
+      scales:{y:{beginAtZero:true,ticks:{callback:v=>'₱'+v.toLocaleString()},grid:{color:'#F1F5F9'}}}}});
+}
+
 /* ANALYTICS */
 function buildAnalytics(){
   const el=document.getElementById('ap-analytics');
@@ -1566,17 +1634,32 @@ function buildAnalytics(){
       </div>
       <div class="a-card"><h3>Customer Segments</h3><div style="position:relative;height:200px"><canvas id="ch-seg"></canvas></div></div>
     </div>
-    <div class="a-card" style="margin-bottom:16px"><h3>Monthly Revenue 2025</h3><div style="position:relative;height:150px"><canvas id="ch-month"></canvas></div></div>
+    <div class="a-card" style="margin-bottom:16px">
+      <div class="a-card-head">
+        <div><h3 id="an-rev-title">Monthly Revenue</h3><div id="an-rev-sum" style="font-size:11.5px;color:#64748B;margin-top:3px"></div></div>
+        <div style="display:flex;gap:8px">
+          <select id="an-rev-month" class="period-select" onchange="onAnRevChange()">
+            <option value="all">Whole Year</option>
+            ${MONTH_NAMES.map((m,i)=>`<option value="${i}">${m}</option>`).join('')}
+          </select>
+          <select id="an-rev-year" class="period-select" onchange="onAnRevChange()">
+            ${revenueYears().map(y=>`<option value="${y}">${y}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div style="position:relative;height:150px"><canvas id="ch-month"></canvas></div>
+    </div>
     <div class="tbl-wrap"><div class="tbl-head"><h3>Product Performance Report (<span id="an-top-period-label">${PERIOD_LABELS[anTopPeriod]}</span>)</h3><button class="btn-add" onclick="exportTopProductsCSV()">Export CSV</button></div>
       <table class="a-table"><thead><tr><th>Product</th><th>Category</th><th>Units Sold</th><th>Revenue</th><th>Status</th></tr></thead>
       <tbody id="an-top-tbody"></tbody></table></div>`;
   anTopPeriod='month'; anTopMetric='units';
+  anRevChart=null; anRevMonth='all'; anRevYear=new Date().getFullYear();
   renderAnTopTable();
   setTimeout(()=>{
     renderAnTopChart();
     const l=CUSTOMERS_DATA.filter(c=>c.seg==='Loyal').length,o2=CUSTOMERS_DATA.filter(c=>c.seg==='Occasional').length,n=CUSTOMERS_DATA.filter(c=>c.seg==='New').length;
     new Chart(document.getElementById('ch-seg'),{type:'pie',data:{labels:[`Loyal (${l})`,`Occasional (${o2})`,`New (${n})`],datasets:[{data:[l,o2,n],backgroundColor:['#C2607E','#B8944A','#4F7EF7'],borderWidth:0,hoverOffset:8}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{size:11}}}}}});
-    new Chart(document.getElementById('ch-month'),{type:'line',data:{labels:['Jan','Feb','Mar','Apr','May','Jun'],datasets:[{data:[18400,22100,19800,28500,26000,31200],borderColor:'#4F7EF7',backgroundColor:'rgba(79,126,247,0.08)',tension:0.4,fill:true,label:'Revenue',pointBackgroundColor:'#4F7EF7',pointRadius:4}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{ticks:{callback:v=>'₱'+v.toLocaleString()},grid:{color:'#F1F5F9'}}}}});
+    renderAnRevenueChart();
   },80);
 }
 
