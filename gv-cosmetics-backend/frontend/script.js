@@ -1553,10 +1553,14 @@ function orderLocalDate(iso){
 function revenueOrders(){
   return (ORDERS_DATA||[]).filter(o=>o.status!=='Cancelled').map(o=>({total:Number(o.total)||0,date:orderLocalDate(o.createdAt)})).filter(o=>o.date);
 }
+const REVENUE_YEAR_FROM=2025, REVENUE_YEAR_TO=2035;
 function revenueYears(){
-  const ys=new Set(revenueOrders().map(o=>o.date.getFullYear()));
+  const ys=new Set();
+  for(let y=REVENUE_YEAR_FROM;y<=REVENUE_YEAR_TO;y++) ys.add(y);
+  // safety: if any order falls outside 2025-2035, still offer that year
+  revenueOrders().forEach(o=>ys.add(o.date.getFullYear()));
   ys.add(new Date().getFullYear());
-  return [...ys].sort((a,b)=>b-a);
+  return [...ys].sort((a,b)=>a-b);
 }
 function onAnRevChange(){
   anRevMonth=document.getElementById('an-rev-month').value;
@@ -1601,7 +1605,7 @@ function renderAnRevenueChart(){
     data:{labels,datasets:[{data,borderColor:'#4F7EF7',backgroundColor:'rgba(79,126,247,0.08)',tension:0.4,fill:true,label:'Revenue',pointBackgroundColor:'#4F7EF7',pointRadius:byMonth?3:4}]},
     options:{responsive:true,maintainAspectRatio:false,
       plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>'₱'+Number(c.parsed.y||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})}}},
-      scales:{y:{beginAtZero:true,ticks:{callback:v=>'₱'+v.toLocaleString()},grid:{color:'#F1F5F9'}}}}});
+      scales:{y:{beginAtZero:true,suggestedMax:total>0?undefined:100,ticks:{callback:v=>'₱'+v.toLocaleString()},grid:{color:'#F1F5F9'}}}}});
 }
 
 /* ANALYTICS */
