@@ -75,6 +75,7 @@ class Address(Base):
     name = Column(String, nullable=False)
     phone = Column(String, nullable=False)
     street = Column(String, nullable=False)
+    barangay = Column(String, nullable=True)   # added later - older rows are NULL
     city = Column(String, nullable=False)
     province = Column(String, nullable=False)
     zip = Column(String, nullable=False)
