@@ -329,8 +329,8 @@
         <div id="addr-list"></div>
         <div style="font-size:13px;font-weight:600;color:var(--text);margin:14px 0 12px">Add New Address</div>
         <div class="pf-row"><div class="pf-field"><label>Full Name</label><input id="addr-name" placeholder="Recipient name"></div><div class="pf-field"><label>Phone</label><input id="addr-phone" placeholder="09XXXXXXXXX"></div></div>
-        <div class="pf-row single"><div class="pf-field"><label>Street / Barangay</label><input id="addr-street" placeholder="123 Rizal St., Brgy. Poblacion"></div></div>
-        <div class="pf-row"><div class="pf-field"><label>City</label>
+        <div class="pf-row single"><div class="pf-field"><label>Street / House No.</label><input id="addr-street" placeholder="e.g. 123 Rizal St., Purok 4"></div></div>
+        <div class="pf-row three"><div class="pf-field"><label>City</label>
           <div class="loc-input-wrap" onclick="openLocationPicker('addr')">
             <input id="addr-city" class="loc-readonly" readonly placeholder="Tap to select">
             <span class="loc-chevron">▾</span>
@@ -338,6 +338,11 @@
         </div><div class="pf-field"><label>Province</label>
           <div class="loc-input-wrap" onclick="openLocationPicker('addr')">
             <input id="addr-province" class="loc-readonly" readonly placeholder="Auto-filled">
+            <span class="loc-chevron">▾</span>
+          </div>
+        </div><div class="pf-field"><label>Barangay</label>
+          <div class="loc-input-wrap" onclick="openLocationPicker('addr','barangay')">
+            <input id="addr-barangay" class="loc-readonly" readonly placeholder="Tap to select">
             <span class="loc-chevron">▾</span>
           </div>
         </div></div>
