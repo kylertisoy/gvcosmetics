@@ -3,7 +3,7 @@ import json
 from datetime import datetime
 
 from sqlalchemy import (
-    Column, Integer, String, Float, Boolean, DateTime, ForeignKey, Text, Enum
+    Column, Integer, String, Float, Boolean, DateTime, Date, ForeignKey, Text, Enum
 )
 from sqlalchemy.orm import relationship
 
@@ -58,6 +58,8 @@ class Product(Base):
     description = Column(Text, default="")
     badge = Column(String, default="")  # 'hot', 'new', or ''
     image_url = Column(Text, nullable=True)  # data URL (base64 JPEG) or hosted image URL
+    manufacture_date = Column(Date, nullable=True)
+    expiry_date = Column(Date, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     order_items = relationship("OrderItem", back_populates="product")
