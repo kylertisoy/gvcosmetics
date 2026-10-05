@@ -59,7 +59,7 @@ function productImgHtml(p, size){
 
 /* Map a backend product (category/emoji/description) to the shape the UI expects (cat/e/desc) */
 function mapProduct(p) {
-  return { id: p.id, name: p.name, cat: p.category, price: p.price, stock: p.stock, e: p.emoji, image: p.image_url || IMAGE_OVERRIDES[p.id], desc: p.description, badge: p.badge, avg_rating: p.avg_rating, rating_count: p.rating_count };
+  return { id: p.id, name: p.name, cat: p.category, price: p.price, stock: p.stock, e: p.emoji, image: p.image_url || IMAGE_OVERRIDES[p.id], desc: p.description, badge: p.badge, avg_rating: p.avg_rating, rating_count: p.rating_count, mfg: p.manufacture_date || '', exp: p.expiry_date || '' };
 }
 
 /* Display-only label for order statuses. The underlying value stays 'Shipped'
@@ -1410,8 +1410,8 @@ function exportCustomersCSV(){
 
 function exportInventoryCSV(){
   if(!PRODUCTS.length){ showToast('No products to export.'); return; }
-  const rows = PRODUCTS.map(p => [p.name, p.cat, p.stock, p.stock===0?'Out of Stock':p.stock<30?'Low Stock':'In Stock']);
-  downloadCSV('gv-cosmetics-inventory.csv', ['Product','Category','Current Stock','Status'], rows);
+  const rows = PRODUCTS.map(p => [p.name, p.cat, p.stock, p.stock===0?'Out of Stock':p.stock<30?'Low Stock':'In Stock', p.mfg||'', p.exp||'', expiryStatusText(p)]);
+  downloadCSV('gv-cosmetics-inventory.csv', ['Product','Category','Current Stock','Status','Manufacturing Date','Expiry Date','Expiry Status'], rows);
   showToast('✅ Inventory report exported.');
 }
 
@@ -1599,12 +1599,14 @@ function buildProducts(){
             <input type="file" id="pf-image" accept="image/jpeg,.jpg,.jpeg" onchange="onProductImageSelected(event)" style="font-size:12px">
           </div>
         </div>
+        <div><label style="font-size:11px;color:#64748B;display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:0.06em">Manufacturing Date</label><input type="date" id="pf-mfg"></div>
+        <div><label style="font-size:11px;color:#64748B;display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:0.06em">Expiry Date</label><input type="date" id="pf-exp"></div>
         <div class="full"><label style="font-size:11px;color:#64748B;display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:0.06em">Description</label><textarea id="pf-desc" placeholder="Product description..."></textarea></div>
       </div>
       <div class="pf-actions"><button class="btn-save" onclick="saveProduct()">Save Product</button><button class="btn-cancel-form" onclick="resetProductForm()">Cancel</button></div>
     </div>
     <div class="tbl-wrap"><div class="tbl-head"><h3>All Products (<span id="prod-count">${PRODUCTS.length}</span>)</h3><button class="btn-add" onclick="resetProductForm();document.getElementById('pf-name').focus()">+ Add New</button></div>
-      <table class="a-table"><thead><tr><th>Product</th><th>Category</th><th>Price</th><th>Stock</th><th>Status</th><th>Actions</th></tr></thead>
+      <table class="a-table"><thead><tr><th>Product</th><th>Category</th><th>Price</th><th>Stock</th><th>Status</th><th>Expiry</th><th>Actions</th></tr></thead>
       <tbody id="prod-tbody">${renderProdRows()}</tbody>
       </table></div>`;
 }
@@ -1617,6 +1619,7 @@ function renderProdRows(){
       <td>₱${p.price.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
       <td><span class="badge ${p.stock===0?'bg-red':p.stock<30?'bg-amber':'bg-green'}">${p.stock}</span></td>
       <td>${p.stock===0?'<span class="badge bg-red">Out of Stock</span>':p.stock<30?'<span class="badge bg-amber">Low Stock</span>':'<span class="badge bg-green">In Stock</span>'}</td>
+      <td>${expiryBadge(p)}${p.mfg?`<div style="font-size:10px;color:#94A3B8;margin-top:2px">Mfg ${fmtDate(p.mfg)}</div>`:''}</td>
       <td><button class="btn-edit" onclick="editProduct(${p.id})">Edit</button><button class="btn-del" onclick="deleteProduct(${p.id})">Delete</button></td>
     </tr>`).join('');
 }
@@ -1662,8 +1665,11 @@ async function saveProduct(){
   const stock=parseInt(document.getElementById('pf-stock').value);
   const emoji=document.getElementById('pf-emoji').value||'💄';
   const desc=document.getElementById('pf-desc').value.trim();
+  const mfg=document.getElementById('pf-mfg').value||null;
+  const exp=document.getElementById('pf-exp').value||null;
   if(!name||!price||isNaN(stock)){showToast('Please fill in all required fields.');return;}
-  const payload={name,category:cat,price,stock,emoji,description:desc};
+  if(mfg&&exp&&exp<=mfg){showToast('Expiry date must be after the manufacturing date.');return;}
+  const payload={name,category:cat,price,stock,emoji,description:desc,manufacture_date:mfg,expiry_date:exp};
   if(pfImageData) payload.image_url=pfImageData; // only sent when admin picked a new JPEG; leaves existing image untouched otherwise
   try {
     if(editingProductId){
@@ -1691,6 +1697,8 @@ function editProduct(id){
   document.getElementById('pf-stock').value=p.stock;
   document.getElementById('pf-emoji').value=p.e;
   document.getElementById('pf-desc').value=p.desc;
+  document.getElementById('pf-mfg').value=p.mfg||'';
+  document.getElementById('pf-exp').value=p.exp||'';
   const imgInput=document.getElementById('pf-image'); if(imgInput) imgInput.value='';
   const prev=document.getElementById('pf-image-preview');
   if(prev) prev.innerHTML = p.image ? `<img src="${p.image}" style="width:100%;height:100%;object-fit:cover">` : `<span style="font-size:26px">${p.e||'💄'}</span>`;
@@ -1712,7 +1720,7 @@ function resetProductForm(){
   editingProductId=null;
   pfImageData=null;
   document.getElementById('prod-form-title').textContent='Add New Product';
-  ['pf-name','pf-price','pf-stock','pf-desc'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  ['pf-name','pf-price','pf-stock','pf-desc','pf-mfg','pf-exp'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   document.getElementById('pf-emoji').value='💄';
   const imgInput=document.getElementById('pf-image'); if(imgInput) imgInput.value='';
   const prev=document.getElementById('pf-image-preview'); if(prev) prev.innerHTML='<span style="font-size:26px">💄</span>';
@@ -1838,26 +1846,78 @@ async function rejectCustomer(id){
   buildApprovals();
 }
 
+/* EXPIRY HELPERS
+   Dates come from the API as 'YYYY-MM-DD'. They're parsed as LOCAL dates (not
+   new Date('YYYY-MM-DD'), which is UTC and can be off by a day in the Philippines).
+   A product counts as expired the day AFTER its expiry date. "Near expiry" = within 30 days. */
+const NEAR_EXPIRY_DAYS = 30;
+function parseLocalDate(str){
+  if(!str) return null;
+  const [y,m,d]=String(str).slice(0,10).split('-').map(Number);
+  return (y&&m&&d) ? new Date(y,m-1,d) : null;
+}
+function fmtDate(str){
+  const d=parseLocalDate(str);
+  return d ? d.toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'}) : '';
+}
+function expiryInfo(p){
+  const end=parseLocalDate(p.exp);
+  if(!end) return {state:'none',days:null};
+  const today=new Date(); today.setHours(0,0,0,0);
+  const days=Math.round((end-today)/86400000);
+  if(days<0) return {state:'expired',days};
+  if(days<=NEAR_EXPIRY_DAYS) return {state:'near',days};
+  return {state:'fresh',days};
+}
+function expiryBadge(p){
+  const x=expiryInfo(p);
+  const dateLine=p.exp?`<div style="font-size:10px;color:#94A3B8;margin-top:3px">Exp ${fmtDate(p.exp)}</div>`:'';
+  if(x.state==='none')    return '<span class="badge bg-gray">No date</span>';
+  if(x.state==='expired') return `<span class="badge bg-red">✕ Expired</span>${dateLine}`;
+  if(x.state==='near')    return `<span class="badge bg-amber">⚠ ${x.days===0?'Expires today':x.days+'d left'}</span>${dateLine}`;
+  return `<span class="badge bg-green">✓ Fresh</span>${dateLine}`;
+}
+function expiryStatusText(p){
+  const x=expiryInfo(p);
+  return x.state==='none'?'No date':x.state==='expired'?'Expired':x.state==='near'?'Near Expiry':'Fresh';
+}
+
 /* INVENTORY */
+let invRiskOnly=false;
+function toggleExpiryRisk(){
+  invRiskOnly=!invRiskOnly;
+  buildInventory();
+}
 function buildInventory(){
   const totalUnits=PRODUCTS.reduce((s,p)=>s+p.stock,0);
   const lowStock=PRODUCTS.filter(p=>p.stock<30&&p.stock>0);
   const outStock=PRODUCTS.filter(p=>p.stock===0);
+  const nearExp=PRODUCTS.filter(p=>expiryInfo(p).state==='near');
+  const expired=PRODUCTS.filter(p=>expiryInfo(p).state==='expired');
   document.getElementById('ap-inventory').innerHTML=`<div class="a-title">Inventory Management</div>
     <div class="kpi-grid">
       <div class="kpi"><div class="kpi-label">Total Products</div><div class="kpi-val">${PRODUCTS.length}</div></div>
       <div class="kpi"><div class="kpi-label">Low Stock</div><div class="kpi-val dn">${lowStock.length}</div></div>
       <div class="kpi"><div class="kpi-label">Out of Stock</div><div class="kpi-val dn">${outStock.length}</div></div>
       <div class="kpi"><div class="kpi-label">Total Units</div><div class="kpi-val">${totalUnits.toLocaleString()}</div></div>
+      <div class="kpi"><div class="kpi-label">⚠️ Near Expiry (≤${NEAR_EXPIRY_DAYS}d)</div><div class="kpi-val dn">${nearExp.length}</div></div>
+      <div class="kpi"><div class="kpi-label">⛔ Expired</div><div class="kpi-val dn">${expired.length}</div></div>
     </div>
     ${lowStock.length||outStock.length?`<div style="background:#FEF2F2;border:1px solid #FECACA;border-radius:10px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:#B91C1C;font-weight:500">⚠️ ${lowStock.length} products are low on stock and ${outStock.length} are out of stock. Please reorder.</div>`:''}
-    <div class="tbl-wrap"><div class="tbl-head"><h3>Stock Levels</h3><button class="btn-add" onclick="exportInventoryCSV()">Export CSV</button></div>
-      <table class="a-table"><thead><tr><th>Product</th><th>Category</th><th>Current Stock</th><th>Level</th><th>Status</th><th>Reorder Qty</th><th>Action</th></tr></thead>
+    ${expired.length||nearExp.length?`<div style="background:#FEF2F2;border:1px solid #FECACA;border-radius:10px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:#B91C1C;font-weight:500">⛔ ${expired.length} product(s) have already expired and ${nearExp.length} are expiring within ${NEAR_EXPIRY_DAYS} days. Review stock before restocking or promoting these items.</div>`:''}
+    <div class="tbl-wrap"><div class="tbl-head"><h3>Stock Levels</h3>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn-risk${invRiskOnly?' on':''}" onclick="toggleExpiryRisk()">${invRiskOnly?'Show All Products':'⚠️ Show Expiry Risk Only'}</button>
+        <button class="btn-add" onclick="exportInventoryCSV()">Export CSV</button>
+      </div></div>
+      <table class="a-table"><thead><tr><th>Product</th><th>Category</th><th>Current Stock</th><th>Level</th><th>Status</th><th>Expiry</th><th>Reorder Qty</th><th>Action</th></tr></thead>
       <tbody id="inv-tbody">${renderInvRows()}</tbody></table></div>`;
 }
 
 function renderInvRows(){
-  return PRODUCTS.map(p=>{
+  const list=invRiskOnly?PRODUCTS.filter(p=>['near','expired'].includes(expiryInfo(p).state)):PRODUCTS;
+  if(!list.length) return `<tr><td colspan="8" style="text-align:center;padding:28px;color:#64748B">No products are expired or near expiry. 🎉</td></tr>`;
+  return list.map(p=>{
     const color=p.stock===0?'#DC2626':p.stock<30?'#D97706':'#16A34A';
     const pct=Math.min(Math.round(p.stock/200*100),100);
     return`<tr id="inv-row-${p.id}">
@@ -1866,6 +1926,7 @@ function renderInvRows(){
       <td><input type="number" value="${p.stock}" id="inv-qty-${p.id}" style="width:65px;border:1px solid #E2E8F0;border-radius:6px;padding:4px 7px;font-size:12px;font-family:'DM Sans',sans-serif"></td>
       <td style="min-width:90px"><div class="inv-bar-wrap"><div class="inv-bar" style="width:${pct}%;background:${color}"></div></div></td>
       <td><span class="badge ${p.stock===0?'bg-red':p.stock<30?'bg-amber':'bg-green'}">${p.stock===0?'Out of Stock':p.stock<30?'Low Stock':'In Stock'}</span></td>
+      <td>${expiryBadge(p)}</td>
       <td>${p.stock<30?`<input type="number" value="100" id="inv-reorder-${p.id}" style="width:60px;border:1px solid #E2E8F0;border-radius:6px;padding:4px 7px;font-size:12px;font-family:'DM Sans',sans-serif">`:'—'}</td>
       <td>
         <button class="btn-save-inline" onclick="updateStock(${p.id})">Update</button>
