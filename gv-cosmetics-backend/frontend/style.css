@@ -293,6 +293,7 @@ body{font-family:'Jost',sans-serif;background:var(--v-bg);color:var(--v-ink);fon
 .ps-title{font-size:11px;font-weight:600;color:var(--v-muted);margin-bottom:18px;display:flex;align-items:center;gap:8px;text-transform:uppercase;letter-spacing:0.12em}
 .pf-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
 .pf-row.single{grid-template-columns:1fr}
+.pf-row.three{grid-template-columns:1fr 1fr 1fr}
 .pf-field{display:flex;flex-direction:column;gap:6px}
 .pf-field label{font-size:10px;color:var(--v-muted);text-transform:uppercase;letter-spacing:0.1em;font-weight:500}
 .pf-field input,.pf-field select{border:1px solid var(--v-border);padding:11px 14px;font-size:13px;font-family:'Jost',sans-serif;color:var(--v-ink);outline:none;transition:border .2s}
@@ -529,7 +530,7 @@ body{font-family:'Jost',sans-serif;background:var(--v-bg);color:var(--v-ink);fon
   .filter-panel{width:100%;position:static;border-right:none;border-bottom:1px solid var(--border);padding:12px 14px}
   .products-grid{padding:0 14px 20px;gap:11px;grid-template-columns:repeat(auto-fill,minmax(145px,1fr))}
   .cart-wrap,.checkout-wrap,.orders-wrap,.profile-wrap,.wishlist-wrap,.stats-wrap{padding:16px}
-  .pf-row,.form-2col{grid-template-columns:1fr}
+  .pf-row,.pf-row.three,.form-2col{grid-template-columns:1fr}
   .stats-kpi{grid-template-columns:1fr 1fr}
   .stats-charts{grid-template-columns:1fr}
   .wishlist-grid{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}
@@ -829,3 +830,7 @@ body{font-family:'Jost',sans-serif;background:var(--v-bg);color:var(--v-ink);fon
 .btn-risk{background:#EFF6FF;border:1px solid #BFDBFE;color:#2563EB;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:500;font-family:'DM Sans',sans-serif;cursor:pointer;transition:background .15s}
 .btn-risk:hover{background:#DBEAFE}
 .btn-risk.on{background:#FEF3C7;border-color:#FCD34D;color:#B45309}
+
+/* Address card: "Set as Default" button (was unstyled) */
+.addr-setdefault-btn{background:transparent;border:1px solid var(--v-ink,#1c1c1a);color:var(--v-ink,#1c1c1a);font-size:9px;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;padding:3px 10px;cursor:pointer;font-family:inherit;transition:background .15s,color .15s}
+.addr-setdefault-btn:hover{background:var(--v-ink,#1c1c1a);color:#fff}
