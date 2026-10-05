@@ -250,7 +250,7 @@ function findLocationMatch(city,prov){
   return null;
 }
 
-function openLocationPicker(ctx){
+function openLocationPicker(ctx,startTab){
   LOC_CTX=ctx;
   const cityId = ctx==='checkout' ? 'co-city' : 'addr-city';
   const provId = ctx==='checkout' ? 'co-prov' : 'addr-province';
@@ -258,6 +258,16 @@ function openLocationPicker(ctx){
   const curProv=document.getElementById(provId).value;
   LOC_STATE = findLocationMatch(curCity,curProv) || {region:null,province:null,city:null,barangay:null};
   LOC_TAB = LOC_STATE.region ? (LOC_STATE.province ? 'city' : 'province') : 'region';
+  // Add-Address form: restore the barangay that's already picked, and let the
+  // Barangay field jump straight to the Barangay tab once a city is chosen.
+  if(ctx==='addr'){
+    const curBrgy=(document.getElementById('addr-barangay')?.value||'').trim();
+    if(LOC_STATE.city && curBrgy){
+      const list=(PH_LOCATIONS[LOC_STATE.region]?.[LOC_STATE.province]?.[LOC_STATE.city])||[];
+      if(list.includes(curBrgy)) LOC_STATE.barangay=curBrgy;
+    }
+    if(startTab==='barangay' && LOC_STATE.city) LOC_TAB='barangay';
+  }
   renderLocationPicker();
   document.getElementById('loc-overlay').classList.add('show');
 }
@@ -285,9 +295,9 @@ function locApply(){
   document.getElementById(cityId).value = LOC_STATE.city;
   document.getElementById(provId).value = LOC_STATE.province;
   if(LOC_CTX==='checkout'){ clearFieldError('co-city'); clearFieldError('co-prov'); }
-  if(LOC_CTX==='addr' && LOC_STATE.barangay){
-    const streetEl=document.getElementById('addr-street');
-    if(streetEl && !streetEl.value.trim()) streetEl.value='Brgy. '+LOC_STATE.barangay;
+  if(LOC_CTX==='addr'){
+    const brgyEl=document.getElementById('addr-barangay');
+    if(brgyEl) brgyEl.value=LOC_STATE.barangay||'';   // cleared if the city changed
   }
   closeLocationPicker();
 }
@@ -315,9 +325,20 @@ function renderLocationPicker(){
   document.getElementById('loc-btn-done').disabled = !LOC_STATE.city;
 }
 
+/* Barangay is stored in its own field. These helpers build the readable street
+   line ("123 Rizal St., Brgy. Poblacion") for cards, checkout and orders. Older
+   addresses that already have the barangay typed into the street are left as-is. */
+function brgyLabel(b){ return /^barangay\s/i.test(b) ? b : 'Brgy. '+b; }
+function streetWithBrgy(street, barangay){
+  if(!barangay) return street;
+  const low=String(street||'').toLowerCase(), b=barangay.toLowerCase();
+  const has=[brgyLabel(barangay).toLowerCase(),'brgy '+b,'brgy.'+b,'barangay '+b].some(x=>low.includes(x));
+  return has ? street : street+', '+brgyLabel(barangay);
+}
+
 async function loadAddresses() {
   const data = await apiFetch('/addresses');
-  addresses = data.map(a => ({ id: a.id, name: a.name, phone: a.phone, street: a.street, city: a.city, province: a.province, zip: a.zip, label: a.label, isDefault: a.is_default }));
+  addresses = data.map(a => ({ id: a.id, name: a.name, phone: a.phone, street: a.street, barangay: a.barangay || '', city: a.city, province: a.province, zip: a.zip, label: a.label, isDefault: a.is_default }));
 }
 
 async function loadNotifications() {
@@ -1033,7 +1054,7 @@ function buildCheckoutAddressOptions(selectedId){
     return `<option value="">No saved address yet</option>`;
   }
   return addresses.map(a=>{
-    const label=(a.label?a.label+' — ':'')+a.street+', '+a.city+', '+a.province;
+    const label=(a.label?a.label+' — ':'')+streetWithBrgy(a.street,a.barangay)+', '+a.city+', '+a.province;
     const isSelected = selectedId!=null ? a.id===selectedId : a.isDefault;
     return `<option value="${a.id}" ${isSelected?'selected':''}>${label}</option>`;
   }).join('');
@@ -1050,7 +1071,7 @@ function onCheckoutAddressChange(){
   if(!sel||!addrHidden) return;
   const a=addresses.find(x=>String(x.id)===sel.value);
   if(a){
-    addrHidden.value=a.street;
+    addrHidden.value=streetWithBrgy(a.street,a.barangay);
     cityHidden.value=a.city;
     provHidden.value=a.province;
     const phInput=document.getElementById('co-ph');
@@ -1296,7 +1317,7 @@ function renderAddrList(){
       <button class="addr-delete-btn" onclick="deleteAddress(${a.id})" style="position:absolute;top:10px;right:10px;background:none;border:none;font-size:16px;color:var(--muted);cursor:pointer">✕</button>
       ${a.isDefault?'<span class="addr-default" style="position:absolute;top:38px;right:10px">Default</span>':`<button class="addr-setdefault-btn" style="position:absolute;top:10px;right:34px" onclick="setDefaultAddress(${a.id})">Set as Default</button>`}
       <p>${a.name} · ${a.phone}</p>
-      <span>${a.street}<br>${a.city}, ${a.province} ${a.zip} · ${a.label}</span>
+      <span>${streetWithBrgy(a.street,a.barangay)}<br>${a.city}, ${a.province} ${a.zip} · ${a.label}</span>
     </div>`).join('');
 
 }
@@ -1323,7 +1344,10 @@ async function addAddress(){
   const name=document.getElementById('addr-name').value.trim();
   const street=document.getElementById('addr-street').value.trim();
   if(!name||!street){showToast('Please fill in the required fields.');return;}
-  const payload={name,phone:document.getElementById('addr-phone').value,street,city:document.getElementById('addr-city').value,province:document.getElementById('addr-province').value,zip:document.getElementById('addr-zip').value,label:document.getElementById('addr-label').value,is_default:addresses.length===0};
+  const barangay=(document.getElementById('addr-barangay')?.value||'').trim();
+  if(!document.getElementById('addr-city').value){showToast('Please select a city.');return;}
+  if(!barangay){showToast('Please select a barangay.');return;}
+  const payload={name,phone:document.getElementById('addr-phone').value,street,barangay,city:document.getElementById('addr-city').value,province:document.getElementById('addr-province').value,zip:document.getElementById('addr-zip').value,label:document.getElementById('addr-label').value,is_default:addresses.length===0};
   try {
     await apiFetch('/addresses', { method:'POST', body: JSON.stringify(payload) });
     await loadAddresses();
