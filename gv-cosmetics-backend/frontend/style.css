@@ -810,3 +810,17 @@ body{font-family:'Jost',sans-serif;background:var(--v-bg);color:var(--v-ink);fon
 .loc-btn-cancel{background:none;border:1px solid var(--v-border);padding:9px 18px;font-size:12.5px;color:var(--v-ink2);cursor:pointer;border-radius:6px}
 .loc-btn-done{background:var(--v-ink,#1c1c1a);color:#fff;border:none;padding:9px 20px;font-size:12.5px;cursor:pointer;border-radius:6px}
 .loc-btn-done:disabled{opacity:0.4;cursor:not-allowed}
+
+/* ── Review: add image + previews ── */
+.rev-actions{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.rev-addimg{display:inline-flex;align-items:center;gap:6px;border:1.5px dashed var(--rose,#C2607E);color:var(--rose,#C2607E);background:none;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;font-family:'DM Sans',sans-serif;cursor:pointer;transition:background .15s}
+.rev-addimg:hover{background:var(--rose-lt,#FBEFF2)}
+.rev-prev{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+.rev-prev:empty{display:none}
+.rev-thumb{position:relative;width:64px;height:64px;border-radius:8px;overflow:hidden;border:1px solid var(--border,#E2E8F0)}
+.rev-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.rev-thumb-x{position:absolute;top:2px;right:2px;width:18px;height:18px;border-radius:50%;border:none;background:rgba(0,0,0,.6);color:#fff;font-size:12px;line-height:1;cursor:pointer;padding:0}
+.review-done-card{background:#F0FBF4;border:1px solid #BEE9CC;border-radius:10px;padding:12px 14px}
+.rev-done-stars{margin:6px 0 4px}
+.rev-done-stars .rev-star{cursor:default}
+.rev-done-text{font-size:12px;color:var(--text);line-height:1.5;margin-bottom:8px;white-space:pre-wrap}
