@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import datetime
 from typing import List, Optional
 
 from pydantic import BaseModel, EmailStr, ConfigDict
@@ -64,8 +64,6 @@ class ProductBase(BaseModel):
     description: str = ""
     badge: str = ""
     image_url: Optional[str] = None
-    manufacturing_date: Optional[date] = None
-    expiry_date: Optional[date] = None
 
 
 class ProductCreate(ProductBase):
@@ -81,8 +79,6 @@ class ProductUpdate(BaseModel):
     description: Optional[str] = None
     badge: Optional[str] = None
     image_url: Optional[str] = None
-    manufacturing_date: Optional[date] = None
-    expiry_date: Optional[date] = None
 
 
 class ProductOut(ProductBase):
@@ -111,6 +107,24 @@ class AddressCreate(AddressBase):
 class AddressOut(AddressBase):
     model_config = ConfigDict(from_attributes=True)
     id: int
+
+
+# ─────────── ORDER REVIEWS ───────────
+class ReviewCreate(BaseModel):
+    stars: int
+    comment: str = ""
+    images: List[str] = []
+
+
+class ReviewOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    order_id: int
+    stars: int
+    comment: str = ""
+    images: List[str] = []
+    customer_name: Optional[str] = None
+    created_at: datetime
 
 
 # ─────────── ORDERS ───────────
@@ -149,6 +163,7 @@ class OrderOut(BaseModel):
     payment_method: str = "cod"
     payment_status: str = "unpaid"
     cancel_reason: Optional[str] = None
+    review: Optional[ReviewOut] = None
 
 
 class OrderStatusUpdate(BaseModel):
