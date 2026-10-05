@@ -1,3 +1,4 @@
+import json
 import random
 import string
 from typing import List, Optional
@@ -191,3 +192,72 @@ def cancel_order(
     db.commit()
     db.refresh(order)
     return order
+
+
+# ─────────── REVIEWS ───────────
+MAX_REVIEW_IMAGES = 3
+MAX_REVIEW_IMAGE_CHARS = 1_500_000   # ~1.1 MB per base64 image; frontend sends ~100-200 KB
+MAX_REVIEW_COMMENT = 1000
+
+
+@router.post("/{order_id}/review", response_model=schemas.ReviewOut)
+def create_review(
+    order_id: int,
+    payload: schemas.ReviewCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    """Customer reviews their own order. Allowed once the admin has set it to
+    Shipped ("Delivering") or Delivered. One review per order."""
+    order = db.query(models.Order).filter(models.Order.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    if order.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You can only review your own orders")
+    if order.status not in (models.OrderStatus.Shipped, models.OrderStatus.Delivered):
+        raise HTTPException(status_code=400, detail="You can review an order once it is on its way")
+    if order.review:
+        raise HTTPException(status_code=409, detail="You already reviewed this order")
+
+    if not 1 <= payload.stars <= 5:
+        raise HTTPException(status_code=400, detail="Stars must be between 1 and 5")
+
+    comment = (payload.comment or "").strip()
+    if len(comment) > MAX_REVIEW_COMMENT:
+        raise HTTPException(status_code=400, detail=f"Comment must be {MAX_REVIEW_COMMENT} characters or fewer")
+
+    if len(payload.images) > MAX_REVIEW_IMAGES:
+        raise HTTPException(status_code=400, detail=f"You can attach up to {MAX_REVIEW_IMAGES} photos")
+    for img in payload.images:
+        if not img.startswith("data:image/"):
+            raise HTTPException(status_code=400, detail="Review photos must be images")
+        if len(img) > MAX_REVIEW_IMAGE_CHARS:
+            raise HTTPException(status_code=400, detail="A review photo is too large")
+
+    review = models.OrderReview(
+        order_id=order.id,
+        user_id=current_user.id,
+        stars=payload.stars,
+        comment=comment,
+        images_json=json.dumps(payload.images),
+    )
+    db.add(review)
+
+    # Feed the order's stars into each product's rating (one rating per user per
+    # product: update it if the customer has already rated that product).
+    for item in order.items:
+        if not item.product_id:
+            continue
+        rating = (
+            db.query(models.Rating)
+            .filter(models.Rating.user_id == current_user.id, models.Rating.product_id == item.product_id)
+            .first()
+        )
+        if rating:
+            rating.stars = payload.stars
+        else:
+            db.add(models.Rating(user_id=current_user.id, product_id=item.product_id, stars=payload.stars))
+
+    db.commit()
+    db.refresh(review)
+    return review
