@@ -14,16 +14,23 @@ load_dotenv()
 Base.metadata.create_all(bind=engine)
 
 
+# Columns added after a table was first created. create_all() only creates NEW
+# tables - it never adds columns to a table that already exists - so these are
+# added here (safe to run on every start; works on SQLite, PostgreSQL and MySQL).
+_NEW_COLUMNS = {
+    "products":  [("manufacture_date", "DATE"), ("expiry_date", "DATE")],
+    "addresses": [("barangay", "VARCHAR(255)")],
+}
+
+
 def _add_missing_columns():
-    """create_all() only creates NEW tables - it never adds columns to a table that
-    already exists. This adds the product manufacture/expiry date columns to an
-    existing `products` table (safe to run on every start; works on SQLite,
-    PostgreSQL and MySQL)."""
-    existing = {c["name"] for c in inspect(engine).get_columns("products")}
+    inspector = inspect(engine)
     with engine.begin() as conn:
-        for col in ("manufacture_date", "expiry_date"):
-            if col not in existing:
-                conn.execute(text(f"ALTER TABLE products ADD COLUMN {col} DATE"))
+        for table, columns in _NEW_COLUMNS.items():
+            existing = {c["name"] for c in inspector.get_columns(table)}
+            for col, col_type in columns:
+                if col not in existing:
+                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {col_type}"))
 
 
 _add_missing_columns()
