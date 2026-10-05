@@ -59,33 +59,7 @@ function productImgHtml(p, size){
 
 /* Map a backend product (category/emoji/description) to the shape the UI expects (cat/e/desc) */
 function mapProduct(p) {
-  return { id: p.id, name: p.name, cat: p.category, price: p.price, stock: p.stock, e: p.emoji, image: p.image_url || IMAGE_OVERRIDES[p.id], desc: p.description, badge: p.badge, avg_rating: p.avg_rating, rating_count: p.rating_count, mfgDate: p.manufacturing_date || null, expiryDate: p.expiry_date || null };
-}
-
-/* ═══ PRODUCT LIFECYCLE / EXPIRY RISK (Objective 2) ═══
-   Days remaining until a product's expiry date. Returns null when no
-   expiry date is set (not every product — e.g. accessories — needs one). */
-function daysUntilExpiry(expiryDateStr){
-  if(!expiryDateStr) return null;
-  const exp = new Date(expiryDateStr).getTime();
-  if(isNaN(exp)) return null;
-  return Math.ceil((exp - Date.now()) / 86400000);
-}
-const EXPIRY_WARNING_WINDOW_DAYS = 30; // products expiring within this many days are flagged "Near Expiry"
-function expiryStatus(p){
-  const d = daysUntilExpiry(p.expiryDate);
-  if(d===null) return null;              // no expiry date tracked for this product
-  if(d<0) return 'expired';
-  if(d<=EXPIRY_WARNING_WINDOW_DAYS) return 'near';
-  return 'fresh';
-}
-function expiryBadgeHtml(p){
-  const status = expiryStatus(p);
-  const d = daysUntilExpiry(p.expiryDate);
-  if(status===null) return '<span style="color:#CBD5E1;font-size:11px">— no expiry set</span>';
-  if(status==='expired') return `<span class="badge bg-red">⛔ Expired ${Math.abs(d)}d ago</span>`;
-  if(status==='near') return `<span class="badge bg-amber">⚠️ ${d}d left</span>`;
-  return `<span class="badge bg-green">✓ Fresh</span>`;
+  return { id: p.id, name: p.name, cat: p.category, price: p.price, stock: p.stock, e: p.emoji, image: p.image_url || IMAGE_OVERRIDES[p.id], desc: p.description, badge: p.badge, avg_rating: p.avg_rating, rating_count: p.rating_count };
 }
 
 /* Display-only label for order statuses. The underlying value stays 'Shipped'
@@ -114,6 +88,7 @@ function mapOrder(o) {
     address: o.shipping_address,
     tracking: o.tracking_number,
     cancelReason: o.cancel_reason || null,
+    review: o.review ? { rating: o.review.stars, text: o.review.comment || '', images: o.review.images || [], customer: o.review.customer_name || '' } : null,
   };
 }
 
@@ -992,8 +967,8 @@ function openCheckout(grand){
       </div>
       <div class="order-summary-box">
         <div class="os-title">Order Summary</div>
-        ${keys.map(id=>{const p=PRODUCTS.find(x=>x.id==id);return`<div class="os-row"><span>${p.name} × ${cart[id]}</span><span>₱${(p.price*cart[id]).toLocaleString('en-PH',{minimumFractionDigits:2})}</span></div>`;}).join('')}
-        <div class="os-row os-total"><span>Total</span><span style="color:var(--rose)">₱${grand.toLocaleString('en-PH',{minimumFractionDigits:2})}</span></div>
+        ${keys.map(id=>{const p=PRODUCTS.find(x=>x.id==id);return`<div class="os-row"><span>${p.name} × ${cart[id]}</span><span>₱${(p.price*cart[id]).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>`;}).join('')}
+        <div class="os-row os-total"><span>Total</span><span style="color:var(--rose)">₱${grand.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>
       </div>
       <div class="form-2col">
         <div class="fg" id="fg-fn"><label>First Name *</label><input id="co-fn" value="${displayName.split(' ')[0]}"><div class="fg-err">First name is required.</div></div>
@@ -1012,7 +987,7 @@ function openCheckout(grand){
       <div class="fg"><label>Payment Method</label>
         <select id="co-pay"><option value="cod">Cash on Delivery</option><option value="gcash">GCash</option><option value="card">Credit/Debit Card</option><option value="maya">Maya</option></select>
       </div>
-      <button class="place-btn" onclick="placeOrder(${grand})">Place Order — ₱${grand.toLocaleString('en-PH',{minimumFractionDigits:2})} →</button>
+      <button class="place-btn" onclick="placeOrder(${grand})">Place Order — ₱${grand.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})} →</button>
     </div>`;
   // Clear a field's error state as soon as the customer starts fixing it
   ['co-fn','co-ln','co-ph'].forEach(id=>{
@@ -1238,7 +1213,7 @@ function renderOrders(){
         <div class="oc-head"><span class="oc-id">${o.id}</span><span class="oc-date">${o.date}</span></div>
         <div class="oc-items" style="opacity:.7">${o.items}</div>
         <div class="oc-foot">
-          <span class="oc-price">₱${o.total.toLocaleString('en-PH',{minimumFractionDigits:2})}</span>
+          <span class="oc-price">₱${o.total.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
           <span class="badge ${o.status==='Delivered'?'bg-green':'bg-red'}">${statusLabel(o.status)}</span>
         </div>
         <button class="btn-cancel-order" style="width:100%;margin-top:10px;background:none;border:1px solid var(--rose,#C2607E);color:var(--rose,#C2607E)" onclick="toggleOrderExpand('${o.id}')">View Details</button>
@@ -1257,7 +1232,7 @@ function renderOrders(){
         <div class="dc-icon">📷</div>
         <div class="dc-body">
           <div class="dc-title">Received your package?</div>
-          <div class="dc-sub">Take a quick photo to confirm delivery — this notifies our team and unlocks your rating.</div>
+          <div class="dc-sub">Take a quick photo to confirm delivery — this notifies our team.</div>
         </div>
         <button class="dc-btn" onclick="openDeliveryCapture('${o.id}')">Confirm Delivery</button>
       </div>`:(hasPhoto?`
@@ -1269,14 +1244,14 @@ function renderOrders(){
       <div class="oc-track-no">Tracking: <span>${o.tracking}</span></div>
       <div class="tt">${steps.map(s=>`<div class="tt-row"><div class="tt-dot ${s.status}">${s.status==='done'?'✓':s.status==='act'?'→':'○'}</div><div class="tt-body"><div class="tt-lbl">${s.label}</div><div class="tt-sub">${s.sub}</div></div></div>`).join('')}</div>
       ${deliveryHtml}
-      ${o.status==='Delivered'?`<div class="review-prompt"><div style="font-size:12px;font-weight:600;color:var(--dark);margin-bottom:8px">Rate your order ⭐</div><div class="review-stars-row" id="revrow-${o.id}">${[1,2,3,4,5].map(i=>`<span class="rev-star" onclick="submitReview('${o.id}',${i})">${i<=0?'★':'☆'}</span>`).join('')}</div><textarea class="review-input" id="rev-txt-${o.id}" placeholder="Share your experience..."></textarea><button class="review-submit" onclick="submitReview('${o.id}',0)">Submit Review</button><div class="review-done" id="rev-done-${o.id}">✅ Review submitted! Thank you!</div></div>`:''}
+      ${(o.status==='Shipped'||o.status==='Delivered')?reviewBlockHtml(o):''}
     </div>`:(deliveryHtml?`<div class="oc-tracking">${deliveryHtml}</div>`:'')
     return`<div class="order-card">
       <div class="oc-head"><span class="oc-id">${o.id}</span><span class="oc-date">${o.date}</span></div>
       <div class="oc-items">${o.items}</div>
       ${o.address?`<div class="oc-addr">📍 ${o.address}</div>`:''}
       <div class="oc-foot">
-        <span class="oc-price">₱${o.total.toLocaleString('en-PH',{minimumFractionDigits:2})}</span>
+        <span class="oc-price">₱${o.total.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
         <span class="badge ${o.status==='Delivered'?'bg-green':o.status==='Shipped'?'bg-blue':o.status==='Processing'?'bg-amber':o.status==='Cancelled'?'bg-red':'bg-gray'}">${statusLabel(o.status)}</span>
       </div>
       ${o.status==='Pending'?`<button class="btn-cancel-order" style="width:100%;margin-top:10px" onclick="openCancelModal(${o.dbId})">Cancel Order</button>`:''}
@@ -1435,12 +1410,8 @@ function exportCustomersCSV(){
 
 function exportInventoryCSV(){
   if(!PRODUCTS.length){ showToast('No products to export.'); return; }
-  const rows = PRODUCTS.map(p => {
-    const days = daysUntilExpiry(p.expiryDate);
-    const expLabel = days===null ? 'N/A' : expiryStatus(p)==='expired' ? `Expired ${Math.abs(days)}d ago` : expiryStatus(p)==='near' ? `${days}d left` : 'Fresh';
-    return [p.name, p.cat, p.stock, p.stock===0?'Out of Stock':p.stock<30?'Low Stock':'In Stock', p.expiryDate||'', expLabel];
-  });
-  downloadCSV('gv-cosmetics-inventory.csv', ['Product','Category','Current Stock','Stock Status','Expiry Date','Expiry Status'], rows);
+  const rows = PRODUCTS.map(p => [p.name, p.cat, p.stock, p.stock===0?'Out of Stock':p.stock<30?'Low Stock':'In Stock']);
+  downloadCSV('gv-cosmetics-inventory.csv', ['Product','Category','Current Stock','Status'], rows);
   showToast('✅ Inventory report exported.');
 }
 
@@ -1622,8 +1593,6 @@ function buildProducts(){
         <div><label style="font-size:11px;color:#64748B;display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:0.06em">Price (₱)</label><input type="number" id="pf-price" placeholder="0.00" step="0.01"></div>
         <div><label style="font-size:11px;color:#64748B;display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:0.06em">Stock Qty</label><input type="number" id="pf-stock" placeholder="0"></div>
         <div><label style="font-size:11px;color:#64748B;display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:0.06em">Emoji Icon</label><input id="pf-emoji" placeholder="💄" maxlength="2" value="💄"></div>
-        <div><label style="font-size:11px;color:#64748B;display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:0.06em">Manufacturing Date</label><input type="date" id="pf-mfg-date"></div>
-        <div><label style="font-size:11px;color:#64748B;display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:0.06em">Expiry Date</label><input type="date" id="pf-expiry-date"></div>
         <div><label style="font-size:11px;color:#64748B;display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:0.06em">Product Image (JPEG)</label>
           <div style="display:flex;align-items:center;gap:10px">
             <div id="pf-image-preview" style="width:52px;height:52px;border-radius:8px;border:1.5px solid #E2E8F0;overflow:hidden;display:flex;align-items:center;justify-content:center;background:#F8FAFC;flex-shrink:0"><span style="font-size:26px">💄</span></div>
@@ -1693,11 +1662,8 @@ async function saveProduct(){
   const stock=parseInt(document.getElementById('pf-stock').value);
   const emoji=document.getElementById('pf-emoji').value||'💄';
   const desc=document.getElementById('pf-desc').value.trim();
-  const mfgDate=document.getElementById('pf-mfg-date').value || null;     // optional — not every product needs expiry tracking
-  const expiryDate=document.getElementById('pf-expiry-date').value || null;
   if(!name||!price||isNaN(stock)){showToast('Please fill in all required fields.');return;}
-  if(mfgDate && expiryDate && expiryDate <= mfgDate){showToast('Expiry date must be after the manufacturing date.');return;}
-  const payload={name,category:cat,price,stock,emoji,description:desc,manufacturing_date:mfgDate,expiry_date:expiryDate};
+  const payload={name,category:cat,price,stock,emoji,description:desc};
   if(pfImageData) payload.image_url=pfImageData; // only sent when admin picked a new JPEG; leaves existing image untouched otherwise
   try {
     if(editingProductId){
@@ -1725,8 +1691,6 @@ function editProduct(id){
   document.getElementById('pf-stock').value=p.stock;
   document.getElementById('pf-emoji').value=p.e;
   document.getElementById('pf-desc').value=p.desc;
-  document.getElementById('pf-mfg-date').value = p.mfgDate ? p.mfgDate.slice(0,10) : '';
-  document.getElementById('pf-expiry-date').value = p.expiryDate ? p.expiryDate.slice(0,10) : '';
   const imgInput=document.getElementById('pf-image'); if(imgInput) imgInput.value='';
   const prev=document.getElementById('pf-image-preview');
   if(prev) prev.innerHTML = p.image ? `<img src="${p.image}" style="width:100%;height:100%;object-fit:cover">` : `<span style="font-size:26px">${p.e||'💄'}</span>`;
@@ -1748,7 +1712,7 @@ function resetProductForm(){
   editingProductId=null;
   pfImageData=null;
   document.getElementById('prod-form-title').textContent='Add New Product';
-  ['pf-name','pf-price','pf-stock','pf-desc','pf-mfg-date','pf-expiry-date'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  ['pf-name','pf-price','pf-stock','pf-desc'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   document.getElementById('pf-emoji').value='💄';
   const imgInput=document.getElementById('pf-image'); if(imgInput) imgInput.value='';
   const prev=document.getElementById('pf-image-preview'); if(prev) prev.innerHTML='<span style="font-size:26px">💄</span>';
@@ -1879,9 +1843,6 @@ function buildInventory(){
   const totalUnits=PRODUCTS.reduce((s,p)=>s+p.stock,0);
   const lowStock=PRODUCTS.filter(p=>p.stock<30&&p.stock>0);
   const outStock=PRODUCTS.filter(p=>p.stock===0);
-  const expiredProducts = PRODUCTS.filter(p => expiryStatus(p)==='expired');
-  const nearExpiryProducts = PRODUCTS.filter(p => expiryStatus(p)==='near');
-
   document.getElementById('ap-inventory').innerHTML=`<div class="a-title">Inventory Management</div>
     <div class="kpi-grid">
       <div class="kpi"><div class="kpi-label">Total Products</div><div class="kpi-val">${PRODUCTS.length}</div></div>
@@ -1889,48 +1850,14 @@ function buildInventory(){
       <div class="kpi"><div class="kpi-label">Out of Stock</div><div class="kpi-val dn">${outStock.length}</div></div>
       <div class="kpi"><div class="kpi-label">Total Units</div><div class="kpi-val">${totalUnits.toLocaleString()}</div></div>
     </div>
-    <div class="kpi-grid" style="margin-top:12px">
-      <div class="kpi"><div class="kpi-label">⚠️ Near Expiry (≤${EXPIRY_WARNING_WINDOW_DAYS}d)</div><div class="kpi-val dn">${nearExpiryProducts.length}</div></div>
-      <div class="kpi"><div class="kpi-label">⛔ Expired</div><div class="kpi-val dn">${expiredProducts.length}</div></div>
-    </div>
-    ${lowStock.length||outStock.length?`<div style="background:#FEF2F2;border:1px solid #FECACA;border-radius:10px;padding:12px 16px;margin-top:16px;font-size:13px;color:#B91C1C;font-weight:500">⚠️ ${lowStock.length} products are low on stock and ${outStock.length} are out of stock. Please reorder.</div>`:''}
-    ${(()=>{
-      if(!expiredProducts.length && !nearExpiryProducts.length) return '';
-      let msg;
-      if(expiredProducts.length && nearExpiryProducts.length){
-        msg = `⛔ ${expiredProducts.length} product(s) have already expired and ${nearExpiryProducts.length} are expiring within ${EXPIRY_WARNING_WINDOW_DAYS} days.`;
-      } else if(expiredProducts.length){
-        msg = `⛔ ${expiredProducts.length} product(s) have already expired.`;
-      } else {
-        msg = `⚠️ ${nearExpiryProducts.length} product(s) are expiring within ${EXPIRY_WARNING_WINDOW_DAYS} days.`;
-      }
-      return `<div style="background:#FEF2F2;border:1px solid #FECACA;border-radius:10px;padding:12px 16px;margin-top:10px;font-size:13px;color:#B91C1C;font-weight:500">${msg} Review stock before restocking or promoting these items.</div>`;
-    })()}
-    <div class="tbl-wrap" style="margin-top:16px"><div class="tbl-head"><h3>Stock Levels</h3>
-        <div style="display:flex;gap:8px">
-          <button class="btn-edit" onclick="toggleInvExpiryFilter()">${invExpiryFilterOn ? 'Show All Products' : '⚠️ Show Expiry Risk Only'}</button>
-          <button class="btn-add" onclick="exportInventoryCSV()">Export CSV</button>
-        </div>
-      </div>
-      <table class="a-table"><thead><tr><th>Product</th><th>Category</th><th>Current Stock</th><th>Level</th><th>Status</th><th>Expiry</th><th>Reorder Qty</th><th>Action</th></tr></thead>
+    ${lowStock.length||outStock.length?`<div style="background:#FEF2F2;border:1px solid #FECACA;border-radius:10px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:#B91C1C;font-weight:500">⚠️ ${lowStock.length} products are low on stock and ${outStock.length} are out of stock. Please reorder.</div>`:''}
+    <div class="tbl-wrap"><div class="tbl-head"><h3>Stock Levels</h3><button class="btn-add" onclick="exportInventoryCSV()">Export CSV</button></div>
+      <table class="a-table"><thead><tr><th>Product</th><th>Category</th><th>Current Stock</th><th>Level</th><th>Status</th><th>Reorder Qty</th><th>Action</th></tr></thead>
       <tbody id="inv-tbody">${renderInvRows()}</tbody></table></div>`;
 }
 
-/* Toggles the Inventory table between "show everything" and "show only
-   products that are expired or within the expiry warning window" —
-   this is the "supports timely inventory decisions" half of Objective 2. */
-let invExpiryFilterOn = false;
-function toggleInvExpiryFilter(){
-  invExpiryFilterOn = !invExpiryFilterOn;
-  buildInventory();
-}
-
 function renderInvRows(){
-  const list = invExpiryFilterOn ? PRODUCTS.filter(p => expiryStatus(p)==='expired' || expiryStatus(p)==='near') : PRODUCTS;
-  if(invExpiryFilterOn && !list.length){
-    return `<tr><td colspan="8" style="text-align:center;color:#64748B;padding:24px">✅ No products are expired or nearing expiry.</td></tr>`;
-  }
-  return list.map(p=>{
+  return PRODUCTS.map(p=>{
     const color=p.stock===0?'#DC2626':p.stock<30?'#D97706':'#16A34A';
     const pct=Math.min(Math.round(p.stock/200*100),100);
     return`<tr id="inv-row-${p.id}">
@@ -1939,7 +1866,6 @@ function renderInvRows(){
       <td><input type="number" value="${p.stock}" id="inv-qty-${p.id}" style="width:65px;border:1px solid #E2E8F0;border-radius:6px;padding:4px 7px;font-size:12px;font-family:'DM Sans',sans-serif"></td>
       <td style="min-width:90px"><div class="inv-bar-wrap"><div class="inv-bar" style="width:${pct}%;background:${color}"></div></div></td>
       <td><span class="badge ${p.stock===0?'bg-red':p.stock<30?'bg-amber':'bg-green'}">${p.stock===0?'Out of Stock':p.stock<30?'Low Stock':'In Stock'}</span></td>
-      <td>${expiryBadgeHtml(p)}</td>
       <td>${p.stock<30?`<input type="number" value="100" id="inv-reorder-${p.id}" style="width:60px;border:1px solid #E2E8F0;border-radius:6px;padding:4px 7px;font-size:12px;font-family:'DM Sans',sans-serif">`:'—'}</td>
       <td>
         <button class="btn-save-inline" onclick="updateStock(${p.id})">Update</button>
@@ -1971,30 +1897,130 @@ async function reorderStock(id){
   showToast('Reordered '+qty+' units of '+p.name);
 }
 
-/* ═══ REVIEW ═══ */
-function submitReview(oid,starClicked){
-  const row=document.getElementById('revrow-'+oid);
-  if(!row)return;
-  const stars=row.querySelectorAll('.rev-star');
-  let rating=0;
-  stars.forEach((s,i)=>{if(s.classList.contains('selected'))rating=i+1;});
-  if(starClicked>0){
-    stars.forEach((s,i)=>{s.textContent=i<starClicked?'★':'☆';s.classList.toggle('selected',i<starClicked);s.classList.toggle('on',i<starClicked);});
-    rating=starClicked;
+/* ═══ REVIEW ═══
+   Unlocked as soon as the admin sets the order to "Delivering" (Shipped) and stays
+   available once Delivered. Customer picks stars, writes a comment, optionally adds
+   up to 3 photos, then presses Submit -> POST /orders/:id/review. The backend also
+   updates each product's star rating, so we reload orders + products afterwards. */
+const REVIEW_MAX_IMAGES = 3;
+let pendingReviewImages = {};   // orderId -> [dataUrl,...] (kept across re-renders)
+let pendingReviewStars  = {};   // orderId -> 1..5
+
+function escHtml(t){
+  return String(t==null?'':t).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function reviewBlockHtml(o){
+  const done=o.review;
+  if(done){
+    return `<div class="review-prompt">
+      <div class="review-done-card">
+        <div class="review-done" style="display:block">✅ Review submitted! Thank you!</div>
+        <div class="rev-done-stars">${[1,2,3,4,5].map(i=>`<span class="rev-star${i<=done.rating?' on':''}">${i<=done.rating?'★':'☆'}</span>`).join('')}</div>
+        ${done.text?`<div class="rev-done-text">${escHtml(done.text)}</div>`:''}
+        ${(done.images&&done.images.length)?`<div class="rev-prev">${done.images.map(src=>`<div class="rev-thumb"><img src="${src}" alt="Review photo"></div>`).join('')}</div>`:''}
+      </div>
+    </div>`;
   }
-  if(rating===0){showToast('Please select a star rating first.');return;}
-  document.getElementById('rev-done-'+oid).style.display='block';
-  document.querySelector('#revrow-'+oid).closest('.review-prompt').querySelector('.review-submit').style.display='none';
-  // Persist the star rating against each product in this order (silently)
-  // so it also shows up on the product cards back in the Shop.
+  const cur=pendingReviewStars[o.id]||0;
+  return `<div class="review-prompt">
+    <div style="font-size:12px;font-weight:600;color:var(--dark);margin-bottom:8px">Rate your order ⭐</div>
+    <div class="review-stars-row" id="revrow-${o.id}">${[1,2,3,4,5].map(i=>`<span class="rev-star${i<=cur?' on selected':''}" onclick="selectReviewStar('${o.id}',${i})">${i<=cur?'★':'☆'}</span>`).join('')}</div>
+    <textarea class="review-input" id="rev-txt-${o.id}" placeholder="Share your experience..."></textarea>
+    <div class="rev-prev" id="rev-prev-${o.id}">${reviewPreviewHtml(o.id)}</div>
+    <div class="rev-actions">
+      <label class="rev-addimg" id="rev-addimg-${o.id}"${(pendingReviewImages[o.id]||[]).length>=REVIEW_MAX_IMAGES?' style="display:none"':''}>
+        📷 Add image
+        <input type="file" accept="image/*" multiple style="display:none" onchange="addReviewImages('${o.id}',this)">
+      </label>
+      <button class="review-submit" onclick="submitReview('${o.id}')">Submit Review</button>
+    </div>
+  </div>`;
+}
+
+function reviewPreviewHtml(oid){
+  return (pendingReviewImages[oid]||[]).map((src,i)=>`<div class="rev-thumb"><img src="${src}" alt="Review photo"><button type="button" class="rev-thumb-x" title="Remove" onclick="removeReviewImage('${oid}',${i})">×</button></div>`).join('');
+}
+function refreshReviewPreview(oid){
+  const box=document.getElementById('rev-prev-'+oid);
+  if(box) box.innerHTML=reviewPreviewHtml(oid);
+  const btn=document.getElementById('rev-addimg-'+oid);
+  if(btn) btn.style.display=(pendingReviewImages[oid]||[]).length>=REVIEW_MAX_IMAGES?'none':'';
+}
+
+/* Shrinks a photo to max 900px JPEG so it's light enough to store/send */
+function compressImageFile(file){
+  return new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onerror=()=>reject(new Error('Could not read image'));
+    reader.onload=()=>{
+      const img=new Image();
+      img.onerror=()=>reject(new Error('Not a valid image'));
+      img.onload=()=>{
+        const max=900, scale=Math.min(1,max/Math.max(img.width,img.height));
+        const c=document.createElement('canvas');
+        c.width=Math.round(img.width*scale); c.height=Math.round(img.height*scale);
+        c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+        resolve(c.toDataURL('image/jpeg',0.75));
+      };
+      img.src=reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+async function addReviewImages(oid,input){
+  const files=[...(input.files||[])];
+  input.value='';
+  if(!files.length)return;
+  const list=pendingReviewImages[oid]=pendingReviewImages[oid]||[];
+  for(const f of files){
+    if(list.length>=REVIEW_MAX_IMAGES){showToast('You can add up to '+REVIEW_MAX_IMAGES+' photos.');break;}
+    if(!f.type.startsWith('image/')){showToast('Please choose an image file.');continue;}
+    try{ list.push(await compressImageFile(f)); }
+    catch(e){ showToast('⚠️ '+e.message); }
+  }
+  refreshReviewPreview(oid);
+}
+function removeReviewImage(oid,idx){
+  (pendingReviewImages[oid]||[]).splice(idx,1);
+  refreshReviewPreview(oid);
+}
+
+function selectReviewStar(oid,n){
+  pendingReviewStars[oid]=n;
+  document.querySelectorAll('#revrow-'+oid+' .rev-star').forEach((s,i)=>{
+    s.textContent=i<n?'★':'☆';
+    s.classList.toggle('on',i<n);
+    s.classList.toggle('selected',i<n);
+  });
+}
+
+async function submitReview(oid){
   const order=myOrders.find(o=>o.id===oid);
-  if(order){
-    order.items.split(',').map(s=>s.trim()).forEach(name=>{
-      const p=PRODUCTS.find(x=>x.name===name);
-      if(p) rateProduct(p.id, rating, true);
-    });
+  if(!order)return;
+  if(order.status!=='Shipped'&&order.status!=='Delivered'){
+    showToast('You can review this order once it is on its way.');return;
   }
+  const rating=pendingReviewStars[oid]||0;
+  if(rating===0){showToast('Please select a star rating first.');return;}
+  const text=(document.getElementById('rev-txt-'+oid)?.value||'').trim();
+  const images=(pendingReviewImages[oid]||[]).slice();
+
+  const btn=document.querySelector('#revrow-'+oid)?.closest('.review-prompt')?.querySelector('.review-submit');
+  if(btn){btn.disabled=true;btn.textContent='Submitting...';}
+  try {
+    await apiFetch('/orders/'+order.dbId+'/review',{method:'POST',body:JSON.stringify({stars:rating,comment:text,images})});
+  } catch(e){
+    showToast('⚠️ '+e.message);
+    if(btn){btn.disabled=false;btn.textContent='Submit Review';}
+    return;
+  }
+  delete pendingReviewImages[oid]; delete pendingReviewStars[oid];
   showToast('⭐ Thank you for your review!');
+  try { await Promise.all([loadOrders(), loadProducts()]); } catch(e){}
+  renderOrders();
+  if(typeof renderProducts==='function') renderProducts();
 }
 
 /* ═══ MY STATS ═══ */
@@ -2012,7 +2038,7 @@ function renderStats(){
   });
   body.innerHTML=`
     <div class="stats-kpi">
-      <div class="sk"><div class="sk-icon">💰</div><div class="sk-lbl">Total Spent</div><div class="sk-val">₱${totalSpent.toLocaleString('en-PH',{minimumFractionDigits:2})}</div></div>
+      <div class="sk"><div class="sk-icon">💰</div><div class="sk-lbl">Total Spent</div><div class="sk-val">₱${totalSpent.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})}</div></div>
       <div class="sk"><div class="sk-icon">📦</div><div class="sk-lbl">Total Orders</div><div class="sk-val">${myOrders.length}</div></div>
       <div class="sk"><div class="sk-icon">⭐</div><div class="sk-lbl">Loyalty Points</div><div class="sk-val">${loyaltyPoints}</div></div>
     </div>
@@ -2058,7 +2084,7 @@ function filterBadge(badge){
     const r=productRatings[p.id];
     const starsHtml=r?[1,2,3,4,5].map(i=>`<span class="s${i<=Math.round(parseFloat(r.avg))?' on':''}">${i<=Math.round(parseFloat(r.avg))?'★':'☆'}</span>`).join('')+'<span class="p-rating-txt">('+r.count+')</span>':'';
     const badgeHtml=p.badge==='hot'?'<span class="p-badge">🔥 Hot</span>':p.badge==='new'?'<span class="p-badge new">✨ New</span>':'';
-    return`<div class="p-card" onclick="openProductModal(${p.id})">${badgeHtml}<div class="p-img">${productImgHtml(p)}<button class="p-wishlist" onclick="event.stopPropagation();toggleWishlist(${p.id})">${inWL?'❤️':'♡'}</button></div><div class="p-info">${r?`<div class="p-stars-row">${starsHtml}</div>`:''}<div class="p-name">${p.name}</div><div class="p-cat">${p.cat}</div><div class="p-price-row"><div class="p-price">₱${p.price.toLocaleString('en-PH',{minimumFractionDigits:2})}</div></div><div class="p-stock ${p.stock===0?'low':''}">${p.stock===0?'Out of stock':p.stock+' in stock'}</div><button class="p-add" onclick="event.stopPropagation();addCart(${p.id})" ${p.stock===0?'disabled':''}>🛒 Add to Cart</button></div></div>`;
+    return`<div class="p-card" onclick="openProductModal(${p.id})">${badgeHtml}<div class="p-img">${productImgHtml(p)}<button class="p-wishlist" onclick="event.stopPropagation();toggleWishlist(${p.id})">${inWL?'❤️':'♡'}</button></div><div class="p-info">${r?`<div class="p-stars-row">${starsHtml}</div>`:''}<div class="p-name">${p.name}</div><div class="p-cat">${p.cat}</div><div class="p-price-row"><div class="p-price">₱${p.price.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})}</div></div><div class="p-stock ${p.stock===0?'low':''}">${p.stock===0?'Out of stock':p.stock+' in stock'}</div><button class="p-add" onclick="event.stopPropagation();addCart(${p.id})" ${p.stock===0?'disabled':''}>🛒 Add to Cart</button></div></div>`;
   }).join('');
   document.getElementById('section-title').textContent=badge==='hot'?'🔥 Best Sellers':'✨ New Arrivals';
 }
@@ -2073,7 +2099,7 @@ function triggerFlashSale(){
     const inWL=wishlist.includes(p.id);
     const r=productRatings[p.id];
     const starsHtml=r?[1,2,3,4,5].map(i=>`<span class="s${i<=Math.round(parseFloat(r.avg))?' on':''}">${i<=Math.round(parseFloat(r.avg))?'★':'☆'}</span>`).join('')+'<span class="p-rating-txt">('+r.count+')</span>':'';
-    return`<div class="p-card" style="border:2px solid #D4A853" onclick="openProductModal(${p.id})"><span class="p-badge" style="background:#D4A853">⚡ Sale</span><div class="p-img">${productImgHtml(p)}<button class="p-wishlist" onclick="event.stopPropagation();toggleWishlist(${p.id})">${inWL?'❤️':'♡'}</button></div><div class="p-info">${r?`<div class="p-stars-row">${starsHtml}</div>`:''}<div class="p-name">${p.name}</div><div class="p-cat">${p.cat}</div><div class="p-price-row"><div class="p-price"><span style="text-decoration:line-through;font-size:11px;color:var(--v-muted);font-family:Jost">₱${(p.price*1.15).toFixed(0)}</span> ₱${p.price.toLocaleString('en-PH',{minimumFractionDigits:2})}</div></div><div class="p-stock ${p.stock===0?'low':''}">${p.stock===0?'Out of stock':p.stock+' in stock'}</div><button class="p-add" onclick="event.stopPropagation();addCart(${p.id})" ${p.stock===0?'disabled':''}>🛒 Add to Cart</button></div></div>`;
+    return`<div class="p-card" style="border:2px solid #D4A853" onclick="openProductModal(${p.id})"><span class="p-badge" style="background:#D4A853">⚡ Sale</span><div class="p-img">${productImgHtml(p)}<button class="p-wishlist" onclick="event.stopPropagation();toggleWishlist(${p.id})">${inWL?'❤️':'♡'}</button></div><div class="p-info">${r?`<div class="p-stars-row">${starsHtml}</div>`:''}<div class="p-name">${p.name}</div><div class="p-cat">${p.cat}</div><div class="p-price-row"><div class="p-price"><span style="text-decoration:line-through;font-size:11px;color:var(--v-muted);font-family:Jost">₱${(p.price*1.15).toFixed(0)}</span> ₱${p.price.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})}</div></div><div class="p-stock ${p.stock===0?'low':''}">${p.stock===0?'Out of stock':p.stock+' in stock'}</div><button class="p-add" onclick="event.stopPropagation();addCart(${p.id})" ${p.stock===0?'disabled':''}>🛒 Add to Cart</button></div></div>`;
   }).join('');
   document.getElementById('section-title').textContent='⚡ Flash Sale';
 }
