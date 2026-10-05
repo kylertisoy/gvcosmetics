@@ -1,8 +1,9 @@
 import enum
+import json
 from datetime import datetime
 
 from sqlalchemy import (
-    Column, Integer, String, Float, Boolean, DateTime, Date, ForeignKey, Text, Enum
+    Column, Integer, String, Float, Boolean, DateTime, ForeignKey, Text, Enum
 )
 from sqlalchemy.orm import relationship
 
@@ -59,13 +60,6 @@ class Product(Base):
     image_url = Column(Text, nullable=True)  # data URL (base64 JPEG) or hosted image URL
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    # --- Product Lifecycle / Expiry Risk Management ---
-    # Both optional: not every product (e.g. accessories, tools) has a
-    # meaningful expiry date. Date-only (not DateTime) since the admin UI
-    # only ever collects a calendar date, not a time-of-day.
-    manufacturing_date = Column(Date, nullable=True)
-    expiry_date = Column(Date, nullable=True)
-
     order_items = relationship("OrderItem", back_populates="product")
     wishlist_items = relationship("WishlistItem", back_populates="product", cascade="all, delete-orphan")
     ratings = relationship("Rating", back_populates="product", cascade="all, delete-orphan")
@@ -112,6 +106,7 @@ class Order(Base):
 
     user = relationship("User", back_populates="orders")
     items = relationship("OrderItem", back_populates="order", cascade="all, delete-orphan")
+    review = relationship("OrderReview", back_populates="order", uselist=False, cascade="all, delete-orphan")
 
     @property
     def customer_name(self):
@@ -168,3 +163,33 @@ class Notification(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     user = relationship("User", back_populates="notifications")
+
+
+class OrderReview(Base):
+    """One customer review per order: stars + comment + up to 3 photos.
+    Photos are stored as a JSON list of base64 data URLs (same approach as
+    Product.image_url). New table, so Base.metadata.create_all() creates it
+    automatically on next startup - no migration needed."""
+    __tablename__ = "order_reviews"
+
+    id = Column(Integer, primary_key=True, index=True)
+    order_id = Column(Integer, ForeignKey("orders.id"), unique=True, nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    stars = Column(Integer, nullable=False)
+    comment = Column(Text, default="")
+    images_json = Column(Text, default="[]")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    order = relationship("Order", back_populates="review")
+    user = relationship("User")
+
+    @property
+    def images(self):
+        try:
+            return json.loads(self.images_json or "[]")
+        except ValueError:
+            return []
+
+    @property
+    def customer_name(self):
+        return self.user.name if self.user else None
