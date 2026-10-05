@@ -824,3 +824,8 @@ body{font-family:'Jost',sans-serif;background:var(--v-bg);color:var(--v-ink);fon
 .rev-done-stars{margin:6px 0 4px}
 .rev-done-stars .rev-star{cursor:default}
 .rev-done-text{font-size:12px;color:var(--text);line-height:1.5;margin-bottom:8px;white-space:pre-wrap}
+
+/* ── Inventory: expiry risk toggle ── */
+.btn-risk{background:#EFF6FF;border:1px solid #BFDBFE;color:#2563EB;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:500;font-family:'DM Sans',sans-serif;cursor:pointer;transition:background .15s}
+.btn-risk:hover{background:#DBEAFE}
+.btn-risk.on{background:#FEF3C7;border-color:#FCD34D;color:#B45309}
