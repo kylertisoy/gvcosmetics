@@ -676,8 +676,9 @@ function renderProducts(){
     const inWL=wishlist.includes(p.id);
     const r=productRatings[p.id];
     const starsHtml=r?[1,2,3,4,5].map(i=>`<span class="s${i<=Math.round(parseFloat(r.avg))?' on':''}" onclick="event.stopPropagation();rateProduct(${p.id},${i})">${i<=Math.round(parseFloat(r.avg))?'★':'☆'}</span>`).join('')+'<span class="p-rating-txt">('+r.count+')</span>':'';
-    return `<div class="p-card" onclick="openProductModal(${p.id})">
-      ${badge}
+    const expired=isExpired(p);
+    return `<div class="p-card${expired?' expired':''}" onclick="openProductModal(${p.id})">
+      ${expired?'<span class="p-badge" style="background:#B91C1C">⛔ Expired</span>':badge}
       <div class="p-img">
         ${productImgHtml(p)}
         <button class="p-wishlist" onclick="event.stopPropagation();toggleWishlist(${p.id})">${inWL?'❤️':'♡'}</button>
@@ -690,16 +691,33 @@ function renderProducts(){
           <div class="p-price">₱${p.price.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
         </div>
         <div class="p-stock ${isLow?'low':''}">${p.stock===0?'Out of stock':isLow?'⚠️ Only '+p.stock+' left':p.stock+' in stock'}</div>
-        <button class="p-add" onclick="event.stopPropagation();addCart(${p.id})" ${p.stock===0?'disabled':''}>
-          ${p.stock===0?'Out of Stock':'🛒 Add to Cart'}
+        <button class="p-add" onclick="event.stopPropagation();addCart(${p.id})" ${p.stock===0||expired?'disabled':''}>
+          ${expired?'Expired':p.stock===0?'Out of Stock':'🛒 Add to Cart'}
         </button>
       </div>
     </div>`;
   }).join('');
 }
 
+/* Expired products can't be sold. The backend enforces this too (orders.py), so
+   the rule still holds if someone bypasses the page. */
+function isExpired(p){ return expiryInfo(p).state==='expired'; }
+function dropExpiredFromCart(){
+  if(!PRODUCTS.length) return 0;                    // products didn't load: never touch the cart
+  let expiredCount=0, changed=false;
+  Object.keys(cart).forEach(id=>{
+    const p=PRODUCTS.find(x=>x.id==id);
+    if(!p){ delete cart[id]; changed=true; return; }  // product no longer exists
+    if(isExpired(p)){ delete cart[id]; expiredCount++; changed=true; }
+  });
+  if(changed){ saveCartToStorage(); updatePill(); }
+  if(expiredCount) showToast('⚠️ '+expiredCount+' expired item'+(expiredCount===1?' was':'s were')+' removed from your cart.');
+  return expiredCount;
+}
+
 function addCart(id){
   const p=PRODUCTS.find(x=>x.id===id);
+  if(p && isExpired(p)){ showToast('⛔ '+p.name+' has expired and can no longer be ordered.'); return; }
   cart[id]=(cart[id]||0)+1;
   saveCartToStorage();
   updatePill();
@@ -743,7 +761,8 @@ function renderWishlist(){
   }
   body.innerHTML=`<div class="wishlist-grid">${wishlist.map(id=>{
     const p=PRODUCTS.find(x=>x.id===id);if(!p)return'';
-    return`<div class="p-card" style="position:relative" onclick="openProductModal(${p.id})">
+    const expired=isExpired(p);
+    return`<div class="p-card${expired?' expired':''}" style="position:relative" onclick="openProductModal(${p.id})">
       <button class="wl-remove" onclick="event.stopPropagation();toggleWishlist(${p.id});renderWishlist()">✕</button>
       <div class="p-img">${productImgHtml(p)}</div>
       <div class="p-info">
@@ -751,7 +770,7 @@ function renderWishlist(){
         <div class="p-cat">${p.cat}</div>
         <div class="p-price-row"><div class="p-price">₱${p.price.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})}</div></div>
         <div class="p-stock ${p.stock===0?'low':''}">${p.stock===0?'Out of stock':p.stock+' in stock'}</div>
-        <button class="p-add" onclick="event.stopPropagation();addCart(${p.id});renderWishlist()" ${p.stock===0?'disabled':''}>🛒 Add to Cart</button>
+        <button class="p-add" onclick="event.stopPropagation();addCart(${p.id});renderWishlist()" ${p.stock===0||expired?'disabled':''}>${expired?'Expired':'🛒 Add to Cart'}</button>
       </div>
     </div>`;
   }).join('')}</div>`;
@@ -919,9 +938,9 @@ function buildRecommendations(){
         if(p)orderedCats.add(p.cat);
       });
     });
-    reco=PRODUCTS.filter(p=>orderedCats.has(p.cat)&&!Object.keys(cart).map(Number).includes(p.id)).slice(0,8);
+    reco=PRODUCTS.filter(p=>!isExpired(p)&&orderedCats.has(p.cat)&&!Object.keys(cart).map(Number).includes(p.id)).slice(0,8);
   }
-  if(reco.length<4)reco=PRODUCTS.filter(p=>p.badge==='hot'||p.badge==='new').slice(0,8);
+  if(reco.length<4)reco=PRODUCTS.filter(p=>!isExpired(p)&&(p.badge==='hot'||p.badge==='new')).slice(0,8);
   if(!reco.length){wrap.style.display='none';return;}
   wrap.style.display='block';
   document.getElementById('reco-strip').innerHTML=reco.map(p=>`
@@ -970,6 +989,7 @@ function loadCartFromStorage(){
     const raw=localStorage.getItem(key);
     cart = raw ? JSON.parse(raw) : {};
   } catch(e){ cart={}; }
+  dropExpiredFromCart();
 }
 function clearCartStorage(){
   const key=cartStorageKey();
@@ -981,6 +1001,7 @@ function updatePill(){
 }
 
 function renderCart(){
+  dropExpiredFromCart();
   const body=document.getElementById('cart-body');
   const keys=Object.keys(cart);
   if(!keys.length){body.innerHTML=`<div class="empty-state"><div class="empty-icon">🛒</div><h3>Your cart is empty</h3><p>Browse our GV Cosmetics collection and add items you love.</p><button onclick="cPage('shop',document.getElementById('cnav-shop'))">Start Shopping →</button></div>`;return;}
@@ -1127,6 +1148,7 @@ function validateCheckoutForm(){
 }
 
 async function placeOrder(grand){
+  if(dropExpiredFromCart()){ cPage('cart',document.getElementById('cnav-cart')); renderCart(); return; }
   if(!validateCheckoutForm()){
     showToast('⚠️ Please fill in all required fields before placing your order.');
     return;
@@ -2416,7 +2438,7 @@ function filterBadge(badge){
     const r=productRatings[p.id];
     const starsHtml=r?[1,2,3,4,5].map(i=>`<span class="s${i<=Math.round(parseFloat(r.avg))?' on':''}">${i<=Math.round(parseFloat(r.avg))?'★':'☆'}</span>`).join('')+'<span class="p-rating-txt">('+r.count+')</span>':'';
     const badgeHtml=p.badge==='hot'?'<span class="p-badge">🔥 Hot</span>':p.badge==='new'?'<span class="p-badge new">✨ New</span>':'';
-    return`<div class="p-card" onclick="openProductModal(${p.id})">${badgeHtml}<div class="p-img">${productImgHtml(p)}<button class="p-wishlist" onclick="event.stopPropagation();toggleWishlist(${p.id})">${inWL?'❤️':'♡'}</button></div><div class="p-info">${r?`<div class="p-stars-row">${starsHtml}</div>`:''}<div class="p-name">${p.name}</div><div class="p-cat">${p.cat}</div><div class="p-price-row"><div class="p-price">₱${p.price.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})}</div></div><div class="p-stock ${p.stock===0?'low':''}">${p.stock===0?'Out of stock':p.stock+' in stock'}</div><button class="p-add" onclick="event.stopPropagation();addCart(${p.id})" ${p.stock===0?'disabled':''}>🛒 Add to Cart</button></div></div>`;
+    return`<div class="p-card${isExpired(p)?' expired':''}" onclick="openProductModal(${p.id})">${isExpired(p)?'<span class="p-badge" style="background:#B91C1C">⛔ Expired</span>':badgeHtml}<div class="p-img">${productImgHtml(p)}<button class="p-wishlist" onclick="event.stopPropagation();toggleWishlist(${p.id})">${inWL?'❤️':'♡'}</button></div><div class="p-info">${r?`<div class="p-stars-row">${starsHtml}</div>`:''}<div class="p-name">${p.name}</div><div class="p-cat">${p.cat}</div><div class="p-price-row"><div class="p-price">₱${p.price.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})}</div></div><div class="p-stock ${p.stock===0?'low':''}">${p.stock===0?'Out of stock':p.stock+' in stock'}</div><button class="p-add" onclick="event.stopPropagation();addCart(${p.id})" ${p.stock===0||isExpired(p)?'disabled':''}>${isExpired(p)?'Expired':'🛒 Add to Cart'}</button></div></div>`;
   }).join('');
   document.getElementById('section-title').textContent=badge==='hot'?'🔥 Best Sellers':'✨ New Arrivals';
 }
@@ -2431,7 +2453,7 @@ function triggerFlashSale(){
     const inWL=wishlist.includes(p.id);
     const r=productRatings[p.id];
     const starsHtml=r?[1,2,3,4,5].map(i=>`<span class="s${i<=Math.round(parseFloat(r.avg))?' on':''}">${i<=Math.round(parseFloat(r.avg))?'★':'☆'}</span>`).join('')+'<span class="p-rating-txt">('+r.count+')</span>':'';
-    return`<div class="p-card" style="border:2px solid #D4A853" onclick="openProductModal(${p.id})"><span class="p-badge" style="background:#D4A853">⚡ Sale</span><div class="p-img">${productImgHtml(p)}<button class="p-wishlist" onclick="event.stopPropagation();toggleWishlist(${p.id})">${inWL?'❤️':'♡'}</button></div><div class="p-info">${r?`<div class="p-stars-row">${starsHtml}</div>`:''}<div class="p-name">${p.name}</div><div class="p-cat">${p.cat}</div><div class="p-price-row"><div class="p-price"><span style="text-decoration:line-through;font-size:11px;color:var(--v-muted);font-family:Jost">₱${(p.price*1.15).toFixed(0)}</span> ₱${p.price.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})}</div></div><div class="p-stock ${p.stock===0?'low':''}">${p.stock===0?'Out of stock':p.stock+' in stock'}</div><button class="p-add" onclick="event.stopPropagation();addCart(${p.id})" ${p.stock===0?'disabled':''}>🛒 Add to Cart</button></div></div>`;
+    return`<div class="p-card${isExpired(p)?' expired':''}" style="border:2px solid #D4A853" onclick="openProductModal(${p.id})"><span class="p-badge" style="background:#D4A853">⚡ Sale</span><div class="p-img">${productImgHtml(p)}<button class="p-wishlist" onclick="event.stopPropagation();toggleWishlist(${p.id})">${inWL?'❤️':'♡'}</button></div><div class="p-info">${r?`<div class="p-stars-row">${starsHtml}</div>`:''}<div class="p-name">${p.name}</div><div class="p-cat">${p.cat}</div><div class="p-price-row"><div class="p-price"><span style="text-decoration:line-through;font-size:11px;color:var(--v-muted);font-family:Jost">₱${(p.price*1.15).toFixed(0)}</span> ₱${p.price.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})}</div></div><div class="p-stock ${p.stock===0?'low':''}">${p.stock===0?'Out of stock':p.stock+' in stock'}</div><button class="p-add" onclick="event.stopPropagation();addCart(${p.id})" ${p.stock===0||isExpired(p)?'disabled':''}>${isExpired(p)?'Expired':'🛒 Add to Cart'}</button></div></div>`;
   }).join('');
   document.getElementById('section-title').textContent='⚡ Flash Sale';
 }
@@ -2721,8 +2743,9 @@ function openProductModal(id){
   const inWL=wishlist.includes(p.id);
   const r=productRatings[p.id];
   const starsHtml=r?[1,2,3,4,5].map(i=>`<span class="s${i<=Math.round(parseFloat(r.avg))?' on':''}">${i<=Math.round(parseFloat(r.avg))?'★':'☆'}</span>`).join('')+' <span class="p-rating-txt">('+r.count+')</span>':'';
-  const stockClass=p.stock===0?'out':p.stock<30?'low':'ok';
-  const stockText=p.stock===0?'Out of stock':p.stock<30?'⚠️ Only '+p.stock+' left in stock':p.stock+' in stock';
+  const expired=isExpired(p);
+  const stockClass=expired||p.stock===0?'out':p.stock<30?'low':'ok';
+  const stockText=expired?'⛔ Expired — no longer available to order':p.stock===0?'Out of stock':p.stock<30?'⚠️ Only '+p.stock+' left in stock':p.stock+' in stock';
   document.getElementById('pm-body').innerHTML=`
     <div class="pm-img-wrap">${productImgHtml(p,120)}</div>
     <div class="pm-details">
@@ -2733,7 +2756,7 @@ function openProductModal(id){
       <div class="pm-desc">${p.desc||'No description available.'}</div>
       <div class="pm-stock ${stockClass}">${stockText}</div>
       <div class="pm-actions">
-        <button class="pm-add-btn" onclick="addCart(${p.id})" ${p.stock===0?'disabled':''}>${p.stock===0?'Out of Stock':'🛒 Add to Cart'}</button>
+        <button class="pm-add-btn" onclick="addCart(${p.id})" ${p.stock===0||expired?'disabled':''}>${expired?'Expired':p.stock===0?'Out of Stock':'🛒 Add to Cart'}</button>
         <button class="pm-wl-btn" onclick="toggleWishlist(${p.id});openProductModal(${p.id})">${inWL?'❤️':'♡'}</button>
       </div>
     </div>`;
