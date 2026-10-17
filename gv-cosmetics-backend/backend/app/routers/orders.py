@@ -1,6 +1,7 @@
 import json
 import random
 import string
+from datetime import date, datetime, timedelta, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -12,6 +13,15 @@ from ..database import get_db
 router = APIRouter(prefix="/orders", tags=["orders"])
 
 VALID_PAYMENT_METHODS = {"cod", "gcash", "card", "maya"}
+
+
+# Philippines is UTC+8 all year (no daylight saving), so a fixed offset is enough
+# and needs no timezone database on the server.
+PH_TZ = timezone(timedelta(hours=8))
+
+
+def _today_ph() -> date:
+    return datetime.now(PH_TZ).date()
 
 
 def _gen_order_number(db: Session) -> str:
@@ -36,6 +46,7 @@ def create_order(
     if payment_method not in VALID_PAYMENT_METHODS:
         raise HTTPException(status_code=400, detail=f"payment_method must be one of {sorted(VALID_PAYMENT_METHODS)}")
 
+    today = _today_ph()
     total = 0.0
     order_items = []
     for item in payload.items:
@@ -44,6 +55,13 @@ def create_order(
             raise HTTPException(status_code=404, detail=f"Product {item.product_id} not found")
         if item.quantity < 1:
             raise HTTPException(status_code=400, detail="Quantity must be at least 1")
+        # A product is expired from the day AFTER its expiry date. Blocked here on the
+        # server so it can't be bypassed by editing the page or calling the API directly.
+        if product.expiry_date and product.expiry_date < today:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{product.name} has expired and can no longer be ordered",
+            )
         if product.stock < item.quantity:
             raise HTTPException(status_code=400, detail=f"Not enough stock for {product.name}")
 
