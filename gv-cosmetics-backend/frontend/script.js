@@ -81,6 +81,7 @@ function mapOrder(o) {
     dbId: o.id,
     customer: o.customer_name || '',
     items: o.items.map(i => i.product_name).join(', '),
+    lines: o.items.map(i => ({ productId: i.product_id, name: i.product_name, qty: i.quantity, price: i.unit_price })),
     total: o.total,
     date: formatOrderDate(o.created_at),
     createdAt: o.created_at,
@@ -115,6 +116,22 @@ let wishlist=[], loyaltyPoints=0, productRatings={};
 let addresses=[];
 let currentPass='', displayName='';
 let NOTIFS=[];
+
+/* Runs the startup loaders together but reports WHICH one failed and why, instead
+   of one vague message. A failed loader no longer hides the others' data. */
+async function loadAllData(loaders){
+  const results=await Promise.allSettled(loaders.map(([,fn])=>fn()));
+  const failed=[];
+  results.forEach((r,i)=>{
+    if(r.status!=='rejected') return;
+    const name=loaders[i][0], err=r.reason;
+    console.error('Failed to load '+name+':',err);
+    const msg=(err instanceof TypeError)?'server unreachable ('+API_BASE+')':(err&&err.message)||'request failed';
+    failed.push(name+': '+msg);
+  });
+  if(failed.length) showToast('⚠️ Could not load '+failed.join(' | '));
+  return failed.length===0;
+}
 
 /* Fetch products + ratings from the API */
 async function loadProducts() {
@@ -504,15 +521,11 @@ async function doLogin(){
     document.getElementById('c-avatar').textContent=acc.initials;
     document.getElementById('prof-avatar-big').textContent=acc.initials;
     document.getElementById('c-username').textContent=acc.name.split(' ')[0];
-    try {
-      await Promise.all([loadProducts(), loadWishlist(), loadOrders(), loadAddresses(), loadNotifications()]);
-    } catch (e) { showToast('⚠️ Could not reach the server.'); }
+    await loadAllData([['products',loadProducts], ['wishlist',loadWishlist], ['orders',loadOrders], ['addresses',loadAddresses], ['notifications',loadNotifications]]);
     loadCartFromStorage();updatePill();buildShop();renderAddrList();buildRecommendations();updateWishlistBadge();updateNotifBell();renderWishlist();
   } else {
     document.getElementById('screen-admin').classList.remove('hidden');
-    try {
-      await Promise.all([loadProducts(), loadOrders(), loadCustomers()]);
-    } catch (e) { showToast('⚠️ Could not reach the server.'); }
+    await loadAllData([['products',loadProducts], ['orders',loadOrders], ['customers',loadCustomers]]);
     buildAdminAll();
   }
 }
@@ -1396,35 +1409,47 @@ async function changePassword(){
    ADMIN
 ═══════════════════════════════════════════ */
 
-/* Top-products performance by period (units sold + revenue).
-   Weekly/Yearly are scaled off the existing monthly figures so the three
-   views stay internally consistent. */
-const TOP_PRODUCTS_DATA = {
-  week: [
-    { name:'Michael Isopropyl Alcohol 70% 470ml', cat:'Alcohol', units:31, revenue:2187, status:'Fast Moving' },
-    { name:"Michael Styling Gel Sachet 10g", cat:'Hair Care', units:212, revenue:393, status:'Fast Moving' },
-    { name:"Shine N' Free Gel Tube 50ml", cat:'Hair Care', units:25, revenue:301, status:'Fast Moving' },
-    { name:"Great Love Cotton Buds 200's", cat:'Personal Care', units:11, revenue:196, status:'Moderate' },
-    { name:'Michael Ethyl Alcohol 70% 470ml', cat:'Alcohol', units:9, revenue:637, status:'Moderate' },
-    { name:"Great Moods Body Spray Drakkus", cat:'Body Care', units:3, revenue:353, status:'Slow Moving' },
-  ],
-  month: [
-    { name:'Michael Isopropyl Alcohol 70% 470ml', cat:'Alcohol', units:124, revenue:8748, status:'Fast Moving' },
-    { name:"Michael Styling Gel Sachet 10g", cat:'Hair Care', units:850, revenue:1573, status:'Fast Moving' },
-    { name:"Shine N' Free Gel Tube 50ml", cat:'Hair Care', units:98, revenue:1205, status:'Fast Moving' },
-    { name:"Great Love Cotton Buds 200's", cat:'Personal Care', units:45, revenue:785, status:'Moderate' },
-    { name:'Michael Ethyl Alcohol 70% 470ml', cat:'Alcohol', units:38, revenue:2546, status:'Moderate' },
-    { name:"Great Moods Body Spray Drakkus", cat:'Body Care', units:12, revenue:1412, status:'Slow Moving' },
-  ],
-  year: [
-    { name:'Michael Isopropyl Alcohol 70% 470ml', cat:'Alcohol', units:1488, revenue:104976, status:'Fast Moving' },
-    { name:"Michael Styling Gel Sachet 10g", cat:'Hair Care', units:10200, revenue:18876, status:'Fast Moving' },
-    { name:"Shine N' Free Gel Tube 50ml", cat:'Hair Care', units:1176, revenue:14460, status:'Fast Moving' },
-    { name:"Great Love Cotton Buds 200's", cat:'Personal Care', units:540, revenue:9420, status:'Moderate' },
-    { name:'Michael Ethyl Alcohol 70% 470ml', cat:'Alcohol', units:456, revenue:30552, status:'Moderate' },
-    { name:"Great Moods Body Spray Drakkus", cat:'Body Care', units:144, revenue:16944, status:'Slow Moving' },
-  ],
-};
+/* ═══ LIVE SALES DATA ═══
+   Every chart below is calculated from the real orders loaded from the server
+   (Cancelled orders don't count). Nothing here is sample data, so a new customer
+   order shows up automatically the next time the admin data refreshes. */
+function fmtPeso(n){
+  return '₱'+(Number(n)||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+
+/* Top products: Weekly = last 7 days, Monthly = last 30 days, Yearly = last 365 days */
+const TOP_PERIOD_DAYS={week:7,month:30,year:365};
+const TOP_PERIOD_TEXT={week:'Last 7 days',month:'Last 30 days',year:'Last 365 days'};
+
+function computeTopProducts(period){
+  const since=new Date(); since.setHours(0,0,0,0);
+  since.setDate(since.getDate()-(TOP_PERIOD_DAYS[period]-1));
+  const map=new Map();
+  revenueOrders().forEach(o=>{
+    if(o.date<since) return;
+    o.lines.forEach(l=>{
+      const key=l.productId!=null?'id:'+l.productId:'name:'+l.name;
+      const p=PRODUCTS.find(x=>x.id===l.productId)||PRODUCTS.find(x=>x.name===l.name);
+      let r=map.get(key);
+      if(!r){ r={name:p?p.name:l.name,cat:p?p.cat:'—',units:0,revenue:0}; map.set(key,r); }
+      r.units+=l.qty;
+      r.revenue+=l.qty*l.price;
+    });
+  });
+  const rows=[...map.values()];
+  rows.forEach(r=>{ r.revenue=Math.round(r.revenue*100)/100; });
+  // Moving speed is relative to the best seller in the same period
+  const best=Math.max(0,...rows.map(r=>r.units));
+  rows.forEach(r=>{ r.status = r.units>=best*0.5 ? 'Fast Moving' : r.units>=best*0.2 ? 'Moderate' : 'Slow Moving'; });
+  return rows;
+}
+function topNote(period,rows){
+  const lbl=TOP_PERIOD_TEXT[period];
+  if(!rows.length) return lbl+' · no sales yet';
+  const units=rows.reduce((s,r)=>s+r.units,0), rev=rows.reduce((s,r)=>s+r.revenue,0);
+  return `${lbl} · ${units} unit${units===1?'':'s'} · ${fmtPeso(rev)}`;
+}
+
 const PERIOD_LABELS={week:'Weekly',month:'Monthly',year:'Yearly'};
 let anTopChart=null, anTopPeriod='month', anTopMetric='units';
 let dbTopChart=null, dbTopPeriod='month', dbTopMetric='units';
@@ -1467,18 +1492,15 @@ function exportInventoryCSV(){
 }
 
 function exportTopProductsCSV(){
-  // NOTE: TOP_PRODUCTS_DATA is currently hardcoded sample data, not figures
-  // pulled from real orders — this exports whatever that sample data says
-  // until it's replaced with a real backend-driven report.
-  const data = TOP_PRODUCTS_DATA[anTopPeriod] || [];
-  if(!data.length){ showToast('No data to export.'); return; }
+  const data = getTopProductsSorted(anTopPeriod, anTopMetric);
+  if(!data.length){ showToast('No sales in this period to export yet.'); return; }
   const rows = data.map(r => [r.name, r.cat, r.units, r.revenue, r.status]);
   downloadCSV(`gv-cosmetics-top-products-${anTopPeriod}.csv`, ['Product','Category','Units Sold','Revenue','Status'], rows);
   showToast('✅ Report exported.');
 }
 
 function getTopProductsSorted(period,metric){
-  return [...TOP_PRODUCTS_DATA[period]].sort((a,b)=>metric==='revenue'?b.revenue-a.revenue:b.units-a.units);
+  return computeTopProducts(period).sort((a,b)=>metric==='revenue'?b.revenue-a.revenue:b.units-a.units);
 }
 
 function statusBadge(status){
@@ -1494,13 +1516,15 @@ function renderTopProductsChart(canvasId,period,metric,limit){
   return new Chart(ctx,{type:'bar',data:{labels:rows.map(r=>r.name.length>18?r.name.slice(0,16)+'…':r.name),
     datasets:[{data:rows.map(r=>metric==='revenue'?r.revenue:r.units),backgroundColor:'rgba(194,96,126,0.8)',borderRadius:6,label:metric==='revenue'?'₱':'Units'}]},
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
-      scales:{y:{beginAtZero:true,grid:{color:'#F1F5F9'},ticks:{callback:v=>metric==='revenue'?'₱'+v.toLocaleString():v}}}}});
+      scales:{y:{beginAtZero:true,suggestedMax:rows.length?undefined:10,grid:{color:'#F1F5F9'},ticks:{precision:0,callback:v=>metric==='revenue'?'₱'+v.toLocaleString():v}}}}});
 }
 
 /* DASHBOARD: Top Products card (period only — always ranked by units) */
 function renderDbTopChart(){
   if(dbTopChart) dbTopChart.destroy();
   dbTopChart=renderTopProductsChart('ch-db-top',dbTopPeriod,dbTopMetric,5);
+  const note=document.getElementById('db-top-note');
+  if(note) note.textContent=topNote(dbTopPeriod,computeTopProducts(dbTopPeriod));
 }
 function onDbTopChange(){
   dbTopPeriod=document.getElementById('db-top-period').value;
@@ -1512,13 +1536,16 @@ function onDbTopChange(){
 function renderAnTopChart(){
   if(anTopChart) anTopChart.destroy();
   anTopChart=renderTopProductsChart('ch-prod',anTopPeriod,anTopMetric,5);
+  const note=document.getElementById('an-top-note');
+  if(note) note.textContent=topNote(anTopPeriod,computeTopProducts(anTopPeriod));
 }
 function renderAnTopTable(){
   const tbody=document.getElementById('an-top-tbody');
   if(!tbody) return;
-  tbody.innerHTML=TOP_PRODUCTS_DATA[anTopPeriod].map(r=>
-    `<tr><td>${r.name}</td><td>${r.cat}</td><td>${r.units}</td><td>₱${r.revenue.toLocaleString()}</td><td>${statusBadge(r.status)}</td></tr>`
-  ).join('');
+  const rows=getTopProductsSorted(anTopPeriod,anTopMetric).slice(0,10);
+  tbody.innerHTML=rows.length ? rows.map(r=>
+    `<tr><td>${r.name}</td><td>${r.cat}</td><td>${r.units}</td><td>${fmtPeso(r.revenue)}</td><td>${statusBadge(r.status)}</td></tr>`
+  ).join('') : `<tr><td colspan="5" style="text-align:center;padding:24px;color:#64748B">No sales in the ${TOP_PERIOD_TEXT[anTopPeriod].toLowerCase()} yet.</td></tr>`;
   const lbl=document.getElementById('an-top-period-label');
   if(lbl) lbl.textContent=PERIOD_LABELS[anTopPeriod];
 }
@@ -1529,37 +1556,119 @@ function onAnTopChange(){
   renderAnTopTable();
 }
 
+/* DASHBOARD: Weekly Sales Revenue (Mon-Sun) from real orders */
+const WEEK_DAYS=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+let dbWeekOffset=0, dbWeekChart=null;
+function weekStart(offset){
+  const d=new Date(); d.setHours(0,0,0,0);
+  d.setDate(d.getDate()-((d.getDay()+6)%7)+offset*7);   // Monday of the chosen week
+  return d;
+}
+function renderDbWeeklyChart(){
+  const canvas=document.getElementById('ch-sales');
+  if(!canvas) return;
+  const start=weekStart(dbWeekOffset), end=new Date(start); end.setDate(end.getDate()+7);
+  const data=Array(7).fill(0); let total=0, count=0;
+  revenueOrders().forEach(o=>{
+    if(o.date>=start && o.date<end){ data[(o.date.getDay()+6)%7]+=o.total; total+=o.total; count++; }
+  });
+  const today=new Date(); today.setHours(0,0,0,0);
+  const labels=WEEK_DAYS.map((nm,i)=>{
+    const d=new Date(start); d.setDate(start.getDate()+i);
+    if(d>today) data[i]=null;                              // days that haven't happened yet stay empty
+    return nm+' '+d.getDate();
+  });
+  const last=new Date(start); last.setDate(last.getDate()+6);
+  const fmt=d=>d.toLocaleDateString('en-PH',{month:'short',day:'numeric'});
+  const sum=document.getElementById('db-week-sum');
+  if(sum) sum.textContent=`${fmt(start)} – ${fmt(last)} · ${fmtPeso(total)} · ${count} order${count===1?'':'s'}`;
+  if(dbWeekChart) dbWeekChart.destroy();
+  dbWeekChart=new Chart(canvas,{type:'bar',
+    data:{labels,datasets:[{data,backgroundColor:'rgba(79,126,247,0.85)',borderRadius:6,label:'Revenue'}]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>fmtPeso(c.parsed.y)}}},
+      scales:{y:{beginAtZero:true,suggestedMax:total>0?undefined:100,ticks:{callback:v=>'₱'+v.toLocaleString()},grid:{color:'#F1F5F9'}}}}});
+}
+function onDbWeekChange(){
+  dbWeekOffset=parseInt(document.getElementById('db-week-sel').value)||0;
+  renderDbWeeklyChart();
+}
+
+/* Keeps the admin charts current: a cheap fingerprint of the loaded data, so the
+   screen only rebuilds when something actually changed (new order, status change...) */
+let lastAdminSig='';
+function adminDataSignature(){
+  return ORDERS_DATA.map(o=>o.id+':'+o.status+':'+o.total).join('|')
+    +'#'+PRODUCTS.length+':'+PRODUCTS.reduce((s,p)=>s+p.stock,0)+'#'+CUSTOMERS_DATA.length;
+}
+async function refreshAdminData(name){
+  const before=adminDataSignature();
+  try{
+    if(name==='dashboard'||name==='analytics') await Promise.all([loadOrders(),loadProducts(),loadCustomers()]);
+    else if(name==='orders') await loadOrders();
+    else return false;
+  }catch(e){ return false; }
+  return adminDataSignature()!==before;
+}
+// While the admin is looking at the Dashboard or Analytics, check for new orders every minute
+setInterval(async()=>{
+  if(!currentUser||currentUser.role!=='admin'||document.hidden) return;
+  const panel=document.querySelector('.a-panel.on');
+  const name=panel?panel.id.replace('ap-',''):'';
+  if(name!=='dashboard'&&name!=='analytics') return;
+  if(await refreshAdminData(name)) (name==='dashboard'?buildDashboard:buildAnalytics)();
+},60000);
+
 function aPanel(name,el){
   document.querySelectorAll('.a-panel').forEach(p=>p.classList.remove('on'));
   document.querySelectorAll('.a-item').forEach(n=>n.classList.remove('on'));
   document.getElementById('ap-'+name).classList.add('on');
   el.classList.add('on');
   const builders={dashboard:buildDashboard,analytics:buildAnalytics,products:buildProducts,orders:buildOrders,customers:buildCustomers,approvals:buildApprovals,inventory:buildInventory};
+  // Opening a panel starts from the default view (Monthly, This Week, ...)
+  if(name==='dashboard'){ dbTopPeriod='month'; dbTopMetric='units'; dbWeekOffset=0; }
+  if(name==='analytics'){ anTopPeriod='month'; anTopMetric='units'; anRevMonth='all'; anRevYear=new Date().getFullYear(); }
   if(builders[name])builders[name]();
+  // ...then quietly pull the latest orders and redraw if a customer has bought something since
+  if(name==='dashboard'||name==='analytics'||name==='orders'){
+    refreshAdminData(name).then(changed=>{
+      const active=document.querySelector('.a-panel.on');
+      if(changed && active && active.id==='ap-'+name && builders[name]) builders[name]();
+    });
+  }
 }
 
 function buildAdminAll(){buildDashboard();refreshAdminNotifBadge();}
 
 /* DASHBOARD */
 function buildDashboard(){
-  const totalRev=ORDERS_DATA.reduce((s,o)=>s+o.total,0);
+  const totalRev=ORDERS_DATA.filter(o=>o.status!=='Cancelled').reduce((s,o)=>s+o.total,0);
   const totalOrds=ORDERS_DATA.length;
   const pending=ORDERS_DATA.filter(o=>o.status==='Pending').length;
   const el=document.getElementById('ap-dashboard');
   el.innerHTML=`<div class="a-title">Dashboard</div>
     <div class="kpi-grid">
-      <div class="kpi"><div class="kpi-label">Total Revenue</div><div class="kpi-val">₱${totalRev.toLocaleString()}</div><div class="kpi-sub up">▲ All time</div></div>
+      <div class="kpi"><div class="kpi-label">Total Revenue</div><div class="kpi-val">${fmtPeso(totalRev)}</div><div class="kpi-sub up">▲ All time</div></div>
       <div class="kpi"><div class="kpi-label">Total Orders</div><div class="kpi-val">${totalOrds}</div><div class="kpi-sub">${pending} pending</div></div>
       <div class="kpi"><div class="kpi-label">Total Products</div><div class="kpi-val">${PRODUCTS.length}</div><div class="kpi-sub">${PRODUCTS.filter(p=>p.stock<30).length} low stock</div></div>
       <div class="kpi"><div class="kpi-label">Customers</div><div class="kpi-val">${CUSTOMERS_DATA.length}</div><div class="kpi-sub up">▲ Active</div></div>
     </div>
     <div class="chart-grid">
-      <div class="a-card"><h3>Weekly Sales Revenue</h3><div style="position:relative;height:200px"><canvas id="ch-sales"></canvas></div></div>
+      <div class="a-card">
+        <div class="a-card-head">
+          <div><h3>Weekly Sales Revenue</h3><div id="db-week-sum" style="font-size:11.5px;color:#64748B;margin-top:3px"></div></div>
+          <select id="db-week-sel" class="period-select" onchange="onDbWeekChange()">
+            <option value="0">This Week</option>
+            <option value="-1">Last Week</option>
+          </select>
+        </div>
+        <div style="position:relative;height:200px"><canvas id="ch-sales"></canvas></div>
+      </div>
       <div class="a-card"><h3>Order Status Breakdown</h3><div style="position:relative;height:200px"><canvas id="ch-status"></canvas></div></div>
     </div>
     <div class="a-card" style="margin-bottom:18px">
       <div class="a-card-head">
-        <h3>Top Products</h3>
+        <div><h3>Top Products</h3><div id="db-top-note" style="font-size:11.5px;color:#64748B;margin-top:3px"></div></div>
         <div style="display:flex;gap:8px">
           <select id="db-top-metric" class="period-select" onchange="onDbTopChange()">
             <option value="units">By Sales (Units)</option>
@@ -1576,11 +1685,14 @@ function buildDashboard(){
     </div>
     <div class="tbl-wrap"><div class="tbl-head"><h3>Recent Orders</h3><button class="btn-add" onclick="aPanel('orders',document.getElementById('a-item-orders'))">View All</button></div>
       <table class="a-table"><thead><tr><th>Order ID</th><th>Customer</th><th>Items</th><th>Total</th><th>Status</th></tr></thead>
-      <tbody>${ORDERS_DATA.slice(0,5).map(o=>`<tr><td>${o.id}</td><td>${o.customer}</td><td style="font-size:11px;color:#64748B;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${o.items}</td><td>₱${o.total.toLocaleString()}</td><td><span class="badge ${o.status==='Delivered'?'bg-green':o.status==='Shipped'?'bg-blue':o.status==='Processing'?'bg-amber':'bg-gray'}">${statusLabel(o.status)}</span></td></tr>`).join('')}</tbody>
+      <tbody>${ORDERS_DATA.slice(0,5).map(o=>`<tr><td>${o.id}</td><td>${o.customer}</td><td style="font-size:11px;color:#64748B;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${o.items}</td><td>${fmtPeso(o.total)}</td><td><span class="badge ${o.status==='Delivered'?'bg-green':o.status==='Shipped'?'bg-blue':o.status==='Processing'?'bg-amber':'bg-gray'}">${statusLabel(o.status)}</span></td></tr>`).join('')}</tbody>
       </table></div>`;
-  dbTopPeriod='month'; dbTopMetric='units';
+  document.getElementById('db-top-metric').value=dbTopMetric;
+  document.getElementById('db-top-period').value=dbTopPeriod;
+  document.getElementById('db-week-sel').value=String(dbWeekOffset);
+  lastAdminSig=adminDataSignature();
   setTimeout(()=>{
-    new Chart(document.getElementById('ch-sales'),{type:'bar',data:{labels:['Mon','Tue','Wed','Thu','Fri','Sat','Sun'],datasets:[{data:[3200,2800,4100,3600,5200,6800,4900],backgroundColor:'rgba(79,126,247,0.85)',borderRadius:6,label:'₱'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{ticks:{callback:v=>'₱'+v.toLocaleString()},grid:{color:'#F1F5F9'}}}}});
+    renderDbWeeklyChart();
     const ss=['Delivered','Shipped','Processing','Pending'];
     new Chart(document.getElementById('ch-status'),{type:'doughnut',data:{labels:ss.map(statusLabel),datasets:[{data:ss.map(s=>ORDERS_DATA.filter(o=>o.status===s).length),backgroundColor:['#16A34A','#2563EB','#D97706','#9CA3AF'],borderWidth:0,hoverOffset:6}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{size:11},padding:8}}}}});
     renderDbTopChart();
@@ -1602,7 +1714,7 @@ function orderLocalDate(iso){
   return isNaN(d)?null:d;
 }
 function revenueOrders(){
-  return (ORDERS_DATA||[]).filter(o=>o.status!=='Cancelled').map(o=>({total:Number(o.total)||0,date:orderLocalDate(o.createdAt)})).filter(o=>o.date);
+  return (ORDERS_DATA||[]).filter(o=>o.status!=='Cancelled').map(o=>({total:Number(o.total)||0,date:orderLocalDate(o.createdAt),lines:o.lines||[]})).filter(o=>o.date);
 }
 const REVENUE_YEAR_FROM=2025, REVENUE_YEAR_TO=2035;
 function revenueYears(){
@@ -1660,19 +1772,38 @@ function renderAnRevenueChart(){
 }
 
 /* ANALYTICS */
+/* This calendar month vs last month, from real orders */
+function monthlyStats(){
+  const now=new Date(), thisStart=new Date(now.getFullYear(),now.getMonth(),1), prevStart=new Date(now.getFullYear(),now.getMonth()-1,1);
+  const cur={rev:0,n:0}, prev={rev:0,n:0};
+  revenueOrders().forEach(o=>{
+    if(o.date>=thisStart){ cur.rev+=o.total; cur.n++; }
+    else if(o.date>=prevStart){ prev.rev+=o.total; prev.n++; }
+  });
+  return {cur,prev};
+}
+function changeSub(cur,prev,emptyText){
+  if(!prev) return `<div class="kpi-sub">${emptyText}</div>`;
+  const pc=Math.round((cur-prev)/prev*100);
+  return `<div class="kpi-sub ${pc>=0?'up':'dn'}">${pc>=0?'▲':'▼'} ${Math.abs(pc)}% vs last month</div>`;
+}
+
 function buildAnalytics(){
   const el=document.getElementById('ap-analytics');
+  const ms=monthlyStats();
+  const buyers=CUSTOMERS_DATA.filter(c=>c.orders>=1), repeatBuyers=buyers.filter(c=>c.orders>=2);
+  const repeatPct=buyers.length?Math.round(repeatBuyers.length/buyers.length*100):0;
   el.innerHTML=`<div class="a-title">Analytics & Reports</div>
     <div class="kpi-grid">
-      <div class="kpi"><div class="kpi-label">Monthly Revenue</div><div class="kpi-val">₱28,500</div><div class="kpi-sub up">▲ 15% vs last month</div></div>
-      <div class="kpi"><div class="kpi-label">Monthly Orders</div><div class="kpi-val">142</div><div class="kpi-sub up">▲ 8%</div></div>
-      <div class="kpi"><div class="kpi-label">Avg Order Value</div><div class="kpi-val">₱201</div><div class="kpi-sub">Per transaction</div></div>
-      <div class="kpi"><div class="kpi-label">Repeat Buyers</div><div class="kpi-val">68%</div><div class="kpi-sub up">▲ Loyal customers</div></div>
+      <div class="kpi"><div class="kpi-label">Monthly Revenue</div><div class="kpi-val">${fmtPeso(ms.cur.rev)}</div>${changeSub(ms.cur.rev,ms.prev.rev,'No sales last month')}</div>
+      <div class="kpi"><div class="kpi-label">Monthly Orders</div><div class="kpi-val">${ms.cur.n}</div>${changeSub(ms.cur.n,ms.prev.n,'No orders last month')}</div>
+      <div class="kpi"><div class="kpi-label">Avg Order Value</div><div class="kpi-val">${fmtPeso(ms.cur.n?ms.cur.rev/ms.cur.n:0)}</div><div class="kpi-sub">${ms.cur.n?'Per order this month':'No orders this month'}</div></div>
+      <div class="kpi"><div class="kpi-label">Repeat Buyers</div><div class="kpi-val">${repeatPct}%</div><div class="kpi-sub up">${repeatBuyers.length} of ${buyers.length} buyer${buyers.length===1?'':'s'} ordered 2+ times</div></div>
     </div>
     <div class="chart-grid">
       <div class="a-card">
         <div class="a-card-head">
-          <h3>Top Products by Sales</h3>
+          <div><h3>Top Products by Sales</h3><div id="an-top-note" style="font-size:11.5px;color:#64748B;margin-top:3px"></div></div>
           <div style="display:flex;gap:8px">
             <select id="an-top-metric" class="period-select" onchange="onAnTopChange()">
               <option value="units">By Sales (Units)</option>
@@ -1707,8 +1838,10 @@ function buildAnalytics(){
     <div class="tbl-wrap"><div class="tbl-head"><h3>Product Performance Report (<span id="an-top-period-label">${PERIOD_LABELS[anTopPeriod]}</span>)</h3><button class="btn-add" onclick="exportTopProductsCSV()">Export CSV</button></div>
       <table class="a-table"><thead><tr><th>Product</th><th>Category</th><th>Units Sold</th><th>Revenue</th><th>Status</th></tr></thead>
       <tbody id="an-top-tbody"></tbody></table></div>`;
-  anTopPeriod='month'; anTopMetric='units';
-  anRevChart=null; anRevMonth='all'; anRevYear=new Date().getFullYear();
+  document.getElementById('an-top-metric').value=anTopMetric;
+  document.getElementById('an-top-period').value=anTopPeriod;
+  anRevChart=null;
+  lastAdminSig=adminDataSignature();
   renderAnTopTable();
   setTimeout(()=>{
     renderAnTopChart();
@@ -1893,7 +2026,7 @@ function renderOrderRows(){
       <td style="font-weight:600;color:var(--admin-accent)">${o.id}</td>
       <td>${o.customer}</td>
       <td style="font-size:11px;color:#64748B;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${o.items}</td>
-      <td>₱${o.total.toLocaleString()}</td>
+      <td>${fmtPeso(o.total)}</td>
       <td>${o.date}</td>
       <td id="ord-badge-${o.id}"><span class="badge ${o.status==='Delivered'?'bg-green':o.status==='Shipped'?'bg-blue':o.status==='Processing'?'bg-amber':o.status==='Cancelled'?'bg-red':'bg-gray'}" ${o.cancelReason?`title="Cancelled: ${o.cancelReason.replace(/"/g,'&quot;')}"`:''}>${statusLabel(o.status)}</span></td>
       <td>${proof?`<img src="${proof.photo}" class="proof-thumb" onclick="viewDeliveryPhoto('${o.id}')" alt="proof" title="View delivery photo">`:'<span style="color:#CBD5E1;font-size:11px">—</span>'}</td>
@@ -1935,7 +2068,7 @@ function buildCustomers(){
           <td style="font-weight:500">${c.name}</td>
           <td style="color:#64748B;font-size:12px">${c.email}</td>
           <td>${c.orders}</td>
-          <td>₱${c.total.toLocaleString()}</td>
+          <td>${fmtPeso(c.total)}</td>
           <td><span class="badge ${c.seg==='Loyal'?'bg-green':c.seg==='Occasional'?'bg-amber':'bg-blue'}">${c.seg}</span></td>
           <td><button class="btn-edit" onclick="openEmailModal('${escJS(c.email)}','${escJS(c.name)}')">Email</button></td>
         </tr>`).join('')}
@@ -2645,15 +2778,11 @@ async function doLogin(){
     document.getElementById('prof-avatar-big').textContent=acc.initials;
     document.getElementById('c-username').textContent=acc.name.split(' ')[0];
     applyProfileToUI(acc);
-    try {
-      await Promise.all([loadProducts(), loadWishlist(), loadOrders(), loadAddresses(), loadNotifications()]);
-    } catch (e) { showToast('⚠️ Could not reach the server.'); }
+    await loadAllData([['products',loadProducts], ['wishlist',loadWishlist], ['orders',loadOrders], ['addresses',loadAddresses], ['notifications',loadNotifications]]);
     loadCartFromStorage();updatePill();buildShop();renderAddrList();buildRecommendations();updateWishlistBadge();updateNotifBell();renderWishlist();
   } else {
     document.getElementById('screen-admin').classList.remove('hidden');
-    try {
-      await Promise.all([loadProducts(), loadOrders(), loadCustomers()]);
-    } catch (e) { showToast('⚠️ Could not reach the server.'); }
+    await loadAllData([['products',loadProducts], ['orders',loadOrders], ['customers',loadCustomers]]);
     buildAdminAll();
   }
 }
@@ -2696,15 +2825,11 @@ async function tryRestoreSession(){
     document.getElementById('prof-avatar-big').textContent=acc.initials;
     document.getElementById('c-username').textContent=acc.name.split(' ')[0];
     applyProfileToUI(acc);
-    try {
-      await Promise.all([loadProducts(), loadWishlist(), loadOrders(), loadAddresses(), loadNotifications()]);
-    } catch(e){ showToast('⚠️ Could not reach the server.'); }
+    await loadAllData([['products',loadProducts], ['wishlist',loadWishlist], ['orders',loadOrders], ['addresses',loadAddresses], ['notifications',loadNotifications]]);
     loadCartFromStorage();updatePill();buildShop();renderAddrList();buildRecommendations();updateWishlistBadge();updateNotifBell();renderWishlist();
   } else {
     document.getElementById('screen-admin').classList.remove('hidden');
-    try {
-      await Promise.all([loadProducts(), loadOrders(), loadCustomers()]);
-    } catch(e){ showToast('⚠️ Could not reach the server.'); }
+    await loadAllData([['products',loadProducts], ['orders',loadOrders], ['customers',loadCustomers]]);
     buildAdminAll();
   }
 }
