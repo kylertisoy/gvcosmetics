@@ -834,3 +834,7 @@ body{font-family:'Jost',sans-serif;background:var(--v-bg);color:var(--v-ink);fon
 /* Address card: "Set as Default" button (was unstyled) */
 .addr-setdefault-btn{background:transparent;border:1px solid var(--v-ink,#1c1c1a);color:var(--v-ink,#1c1c1a);font-size:9px;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;padding:3px 10px;cursor:pointer;font-family:inherit;transition:background .15s,color .15s}
 .addr-setdefault-btn:hover{background:var(--v-ink,#1c1c1a);color:#fff}
+
+/* Expired products: dimmed and not purchasable */
+.p-card.expired .p-img{filter:grayscale(1);opacity:.55}
+.p-card.expired .p-add,.pm-add-btn:disabled{background:#9CA3AF;border-color:#9CA3AF;color:#fff;cursor:not-allowed}
