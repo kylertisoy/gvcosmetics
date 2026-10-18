@@ -36,6 +36,9 @@ class User(Base):
     email_verified = Column(Boolean, default=False, nullable=False)  # only enforced for customers, see auth.login()
     verification_code = Column(String, nullable=True)
     verification_code_expires = Column(DateTime, nullable=True)
+    reset_code_hash = Column(String, nullable=True)        # forgot-password: hash of the emailed 6-digit code
+    reset_code_expires = Column(DateTime, nullable=True)
+    reset_attempts = Column(Integer, default=0)
     loyalty_points = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
 
