@@ -840,6 +840,25 @@ async function toggleWishlist(id){
   updateWishlistBadge();
   renderProducts();
 }
+/* Wishlist page: "Add to Cart" moves the item into the cart and takes it off the wishlist. */
+async function moveWishlistToCart(id){
+  const p=PRODUCTS.find(x=>x.id===id);
+  if(!p) return;
+  if(isExpired(p)){ showToast('⛔ '+p.name+' has expired and can no longer be ordered.'); return; }
+  addCart(id);
+  if(wishlist.includes(id)){
+    try {
+      let res=await apiFetch('/wishlist/'+id,{ method:'POST' });      // the server toggles: this removes it
+      if(res.in_wishlist) res=await apiFetch('/wishlist/'+id,{ method:'POST' });   // page was out of sync: toggle back off
+      const idx=wishlist.indexOf(id);
+      if(idx>-1) wishlist.splice(idx,1);
+      showToast('✅ '+p.name+' moved to your cart.');
+    } catch(e){ showToast('⚠️ Added to cart, but could not remove it from your wishlist: '+e.message); }
+  }
+  updateWishlistBadge();
+  renderWishlist();
+  renderProducts();
+}
 function updateWishlistBadge(){
   const b=document.getElementById('wl-badge');
   if(!b)return;
@@ -877,7 +896,7 @@ function renderWishlist(){
         <div class="p-cat">${p.cat}</div>
         <div class="p-price-row"><div class="p-price">₱${p.price.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})}</div></div>
         <div class="p-stock ${p.stock===0?'low':''}">${p.stock===0?'Out of stock':p.stock+' in stock'}</div>
-        <button class="p-add" onclick="event.stopPropagation();addCart(${p.id});renderWishlist()" ${p.stock===0||expired?'disabled':''}>${expired?'Expired':'🛒 Add to Cart'}</button>
+        <button class="p-add" onclick="event.stopPropagation();moveWishlistToCart(${p.id})" ${p.stock===0||expired?'disabled':''}>${expired?'Expired':'🛒 Add to Cart'}</button>
       </div>
     </div>`;
   }).join('')}</div>`;
