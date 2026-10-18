@@ -384,12 +384,119 @@ window.addEventListener('scroll',function(){
 
 function showSignup(){
   document.getElementById('login-form-wrap').classList.add('hidden');
+  document.getElementById('forgot-form-wrap')?.classList.add('hidden');
   document.getElementById('signup-form-wrap').classList.remove('hidden');
   document.getElementById('su-err').style.display='none';
 }
 function showLoginForm(){
   document.getElementById('signup-form-wrap').classList.add('hidden');
+  document.getElementById('forgot-form-wrap')?.classList.add('hidden');
+  clearInterval(fpTimer);
   document.getElementById('login-form-wrap').classList.remove('hidden');
+}
+
+/* ═══ FORGOT PASSWORD ═══
+   Step 1: customer enters the email they signed up with -> POST /auth/forgot-password
+           (the backend emails a 6-digit code to that address).
+   Step 2: they enter the code + a new password          -> POST /auth/reset-password
+   The new password must follow the same rules as signup. */
+let fpEmail='', fpTimer=null, fpSecondsLeft=0;
+
+function fpShowErr(step,msg){
+  const el=document.getElementById('fp-err'+step);
+  el.textContent='❌ '+msg; el.style.display='block';
+}
+function fpClearErr(){
+  ['fp-err1','fp-err2'].forEach(id=>{ const el=document.getElementById(id); if(el) el.style.display='none'; });
+}
+function showForgot(){
+  document.getElementById('login-form-wrap').classList.add('hidden');
+  document.getElementById('signup-form-wrap').classList.add('hidden');
+  document.getElementById('forgot-form-wrap').classList.remove('hidden');
+  document.getElementById('fp-step1').classList.remove('hidden');
+  document.getElementById('fp-step2').classList.add('hidden');
+  document.getElementById('fp-intro').style.display='';
+  ['fp-code','fp-pass','fp-pass2'].forEach(id=>{ document.getElementById(id).value=''; });
+  document.getElementById('fp-email').value=document.getElementById('inp-email').value.trim();
+  fpClearErr();
+  clearInterval(fpTimer);
+  document.getElementById('fp-email').focus();
+}
+
+/* Asks the backend to email a code. Returns true if the request went through. */
+async function fpRequestCode(email,btn,busyText){
+  const old=btn?btn.textContent:'';
+  if(btn){ btn.disabled=true; btn.textContent=busyText; }
+  try {
+    await apiFetch('/auth/forgot-password',{ method:'POST', body: JSON.stringify({ email }) });
+    return true;
+  } catch(e){
+    return e.message||'Could not send the code. Please try again.';
+  } finally {
+    if(btn){ btn.disabled=false; btn.textContent=old; }
+  }
+}
+async function fpSendCode(){
+  fpClearErr();
+  const email=document.getElementById('fp-email').value.trim().toLowerCase();
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ fpShowErr(1,'Please enter a valid email address.'); return; }
+  const res=await fpRequestCode(email,document.getElementById('fp-send-btn'),'Sending...');
+  if(res!==true){ fpShowErr(1,res); return; }
+  fpEmail=email;
+  document.getElementById('fp-step1').classList.add('hidden');
+  document.getElementById('fp-step2').classList.remove('hidden');
+  document.getElementById('fp-intro').style.display='none';
+  document.getElementById('fp-ok').textContent='If '+email+' has an account, we sent a 6-digit code to it. The code expires in 10 minutes. Please check your Spam or Junk folder too.';
+  fpStartCooldown(60);
+  document.getElementById('fp-code').focus();
+}
+function fpStartCooldown(seconds){
+  const link=document.getElementById('fp-resend');
+  clearInterval(fpTimer);
+  fpSecondsLeft=seconds;
+  const tick=()=>{
+    if(fpSecondsLeft>0){ link.classList.add('disabled'); link.textContent='Resend code in '+fpSecondsLeft+'s'; fpSecondsLeft--; }
+    else { clearInterval(fpTimer); link.classList.remove('disabled'); link.textContent='Resend code'; }
+  };
+  tick();
+  fpTimer=setInterval(tick,1000);
+}
+async function fpResend(){
+  if(fpSecondsLeft>0||!fpEmail) return;
+  fpClearErr();
+  const res=await fpRequestCode(fpEmail,null,'');
+  if(res!==true){ fpShowErr(2,res); return; }
+  showToast('📧 We sent you a new code.');
+  fpStartCooldown(60);
+}
+async function fpReset(){
+  fpClearErr();
+  const code=document.getElementById('fp-code').value.trim();
+  const p1=document.getElementById('fp-pass').value;
+  const p2=document.getElementById('fp-pass2').value;
+  if(!/^\d{6}$/.test(code)){ fpShowErr(2,'Enter the 6-digit code from your email.'); return; }
+  if(p1.length<6){ fpShowErr(2,'Password must be at least 6 characters.'); return; }
+  if(!/[A-Z]/.test(p1)){ fpShowErr(2,'Password must include at least 1 capital letter.'); return; }
+  if(!/[^A-Za-z0-9]/.test(p1)){ fpShowErr(2,'Password must include at least 1 special character (e.g. ! @ # $ %).'); return; }
+  if(p1!==p2){ fpShowErr(2,'Passwords do not match.'); return; }
+
+  const btn=document.getElementById('fp-reset-btn');
+  btn.disabled=true; btn.textContent='Updating...';
+  try {
+    await apiFetch('/auth/reset-password',{ method:'POST', body: JSON.stringify({ email: fpEmail, code, new_password: p1 }) });
+  } catch(e){
+    fpShowErr(2,e.message||'Could not reset the password.');
+    btn.disabled=false; btn.textContent='Reset Password →';
+    return;
+  }
+  btn.disabled=false; btn.textContent='Reset Password →';
+  showToast('✅ Password updated. Please sign in with your new password.');
+  const emailForLogin=fpEmail;
+  ['fp-code','fp-pass','fp-pass2'].forEach(id=>{ document.getElementById(id).value=''; });
+  showLoginForm();
+  document.getElementById('inp-email').value=emailForLogin;
+  document.getElementById('inp-pass').value='';
+  document.getElementById('inp-pass').focus();
 }
 
 /* ═══ NAME FIELDS: letters only (spaces, hyphens, apostrophes still allowed
