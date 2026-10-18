@@ -1174,7 +1174,7 @@ function openCheckout(grand){
         <div class="fg-err">Please select a delivery address.</div>
       </div>
       <div class="fg"><label>Payment Method</label>
-        <select id="co-pay"><option value="cod">Cash on Delivery</option><option value="gcash">GCash</option><option value="card">Credit/Debit Card</option><option value="maya">Maya</option></select>
+        <select id="co-pay"><option value="cod">Cash on Delivery</option><!-- Cashless options hidden for now (the cashless code is still in place). To bring them back, move these three lines out of this comment: <option value="gcash">GCash</option> <option value="card">Credit/Debit Card</option> <option value="maya">Maya</option> --></select>
       </div>
       <button class="place-btn" onclick="placeOrder(${grand})">Place Order — ₱${grand.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})} →</button>
     </div>`;
