@@ -638,7 +638,7 @@ async function doLogin(){
 }
 
 function doLogout(){
-  currentUser=null;cart={};myOrders=[];activeCat='All';
+  currentUser=null;cart={};cartFromWishlist={};myOrders=[];activeCat='All';
   authToken=null;localStorage.removeItem('gvci_token');
   document.getElementById('inp-email').value='';
   document.getElementById('inp-pass').value='';
@@ -814,10 +814,10 @@ function dropExpiredFromCart(){
   let expiredCount=0, changed=false;
   Object.keys(cart).forEach(id=>{
     const p=PRODUCTS.find(x=>x.id==id);
-    if(!p){ delete cart[id]; changed=true; return; }  // product no longer exists
-    if(isExpired(p)){ delete cart[id]; expiredCount++; changed=true; }
+    if(!p){ delete cart[id]; delete cartFromWishlist[id]; changed=true; return; }  // product no longer exists
+    if(isExpired(p)){ delete cart[id]; delete cartFromWishlist[id]; expiredCount++; changed=true; }
   });
-  if(changed){ saveCartToStorage(); updatePill(); }
+  if(changed){ saveCartToStorage(); saveWlOrigin(); updatePill(); }
   if(expiredCount) showToast('⚠️ '+expiredCount+' expired item'+(expiredCount===1?' was':'s were')+' removed from your cart.');
   return expiredCount;
 }
@@ -852,6 +852,7 @@ async function moveWishlistToCart(id){
       if(res.in_wishlist) res=await apiFetch('/wishlist/'+id,{ method:'POST' });   // page was out of sync: toggle back off
       const idx=wishlist.indexOf(id);
       if(idx>-1) wishlist.splice(idx,1);
+      cartFromWishlist[id]=true; saveWlOrigin();      // remembered: removing it from the cart sends it back
       showToast('✅ '+p.name+' moved to your cart.');
     } catch(e){ showToast('⚠️ Added to cart, but could not remove it from your wishlist: '+e.message); }
   }
@@ -1115,11 +1116,33 @@ function loadCartFromStorage(){
     const raw=localStorage.getItem(key);
     cart = raw ? JSON.parse(raw) : {};
   } catch(e){ cart={}; }
+  loadWlOrigin();
   dropExpiredFromCart();
 }
 function clearCartStorage(){
   const key=cartStorageKey();
   if(key) localStorage.removeItem(key);
+  // the cart was emptied for good (order placed), so nothing goes back to the wishlist
+  cartFromWishlist={};
+  const wk=wlOriginKey();
+  if(wk) localStorage.removeItem(wk);
+}
+
+/* Items moved from the Wishlist into the cart. If one is later removed from the
+   cart, it goes back onto the wishlist. Saved per user, like the cart. */
+let cartFromWishlist={};
+function wlOriginKey(){ return currentUser ? 'gvci_cart_wl_'+currentUser.id : null; }
+function saveWlOrigin(){
+  const k=wlOriginKey();
+  if(k) localStorage.setItem(k, JSON.stringify(cartFromWishlist));
+}
+function loadWlOrigin(){
+  const k=wlOriginKey();
+  try {
+    const raw=k?localStorage.getItem(k):null;
+    cartFromWishlist = raw ? JSON.parse(raw) : {};
+  } catch(e){ cartFromWishlist={}; }
+  Object.keys(cartFromWishlist).forEach(id=>{ if(!cart[id]) delete cartFromWishlist[id]; });   // only items still in the cart
 }
 
 function updatePill(){
@@ -1157,8 +1180,25 @@ function renderCart(){
     <button class="checkout-btn-main" onclick="openCheckout(${total})">Proceed to Checkout →</button>
   </div>`;
 }
-function adjCart(id,d){cart[id]=(cart[id]||0)+d;if(cart[id]<=0)delete cart[id];saveCartToStorage();updatePill();renderCart();}
-function delCart(id){delete cart[id];saveCartToStorage();updatePill();renderCart();}
+function adjCart(id,d){cart[id]=(cart[id]||0)+d;if(cart[id]<=0){delete cart[id];returnToWishlist(id);}saveCartToStorage();updatePill();renderCart();}
+function delCart(id){delete cart[id];returnToWishlist(id);saveCartToStorage();updatePill();renderCart();}
+
+/* An item that was moved from the wishlist and is then removed from the cart goes back to the wishlist. */
+async function returnToWishlist(id){
+  if(!cartFromWishlist[id]) return;                  // it didn't come from the wishlist: nothing to do
+  delete cartFromWishlist[id]; saveWlOrigin();
+  if(wishlist.includes(id)) return;                  // already back on the wishlist
+  const p=PRODUCTS.find(x=>x.id===id);
+  try {
+    let res=await apiFetch('/wishlist/'+id,{ method:'POST' });                   // the server toggles: this adds it
+    if(!res.in_wishlist) res=await apiFetch('/wishlist/'+id,{ method:'POST' });  // it was already there: toggle back on
+    if(!wishlist.includes(id)) wishlist.push(id);
+    showToast('❤️ '+(p?p.name:'Item')+' is back on your wishlist.');
+  } catch(e){ showToast('⚠️ Removed from your cart, but could not put it back on your wishlist: '+e.message); }
+  updateWishlistBadge();
+  renderWishlist();
+  renderProducts();
+}
 
 function openCheckout(grand){
   const defAddr=addresses.find(a=>a.isDefault)||addresses[0];
