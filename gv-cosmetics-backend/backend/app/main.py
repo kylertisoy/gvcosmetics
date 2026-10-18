@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import inspect, text
 
 from .database import Base, engine
-from .routers import auth, products, orders, addresses, wishlist, notifications, customers, analytics, payments, admin_email
+from .routers import auth, products, orders, addresses, wishlist, notifications, customers, analytics, payments, admin_email, password_reset
 
 load_dotenv()
 
@@ -20,6 +20,7 @@ Base.metadata.create_all(bind=engine)
 _NEW_COLUMNS = {
     "products":  [("manufacture_date", "DATE"), ("expiry_date", "DATE")],
     "addresses": [("barangay", "VARCHAR(255)")],
+    "users":     [("reset_code_hash", "VARCHAR(255)"), ("reset_code_expires", "TIMESTAMP"), ("reset_attempts", "INTEGER DEFAULT 0")],
 }
 
 
@@ -58,6 +59,7 @@ app.include_router(customers.router)
 app.include_router(analytics.router)
 app.include_router(payments.router)
 app.include_router(admin_email.router)
+app.include_router(password_reset.router)
 
 
 @app.get("/")
