@@ -88,16 +88,13 @@ function mapOrder(o) {
     status: o.status,
     address: o.shipping_address,
     tracking: o.tracking_number,
-    shippingName: o.shipping_name || o.customer_name || '',
-    packedAt: o.packed_at || null,
-    packedById: o.packed_by_id || null,
     cancelReason: o.cancel_reason || null,
     review: o.review ? { rating: o.review.stars, text: o.review.comment || '', images: o.review.images || [], customer: o.review.customer_name || '' } : null,
   };
 }
 
 function mapNotif(n) {
-  const iconMap = { processing: '🔄', packed: '📦', shipped: '🚚', delivered: '✅', info: '🔔' };
+  const iconMap = { processing: '🔄', shipped: '🚚', delivered: '✅', info: '🔔' };
   return {
     id: n.id,
     icon: iconMap[n.type] || '🔔',
@@ -626,12 +623,7 @@ async function doLogin(){
   currentPass = pass;
 
   document.getElementById('screen-login').classList.add('hidden');
-  if(acc.role==='staff'){
-    document.getElementById('screen-staff').classList.remove('hidden');
-    document.getElementById('staff-avatar').textContent=acc.initials || (acc.name||'ST').split(' ').map(x=>x[0]).join('').slice(0,2).toUpperCase();
-    document.getElementById('staff-name').textContent=acc.name || 'Staff';
-    await loadStaffOrders();
-  } else if(acc.role==='customer'){
+  if(acc.role==='customer'){
     document.getElementById('screen-customer').classList.remove('hidden');
     document.getElementById('c-avatar').textContent=acc.initials;
     document.getElementById('prof-avatar-big').textContent=acc.initials;
@@ -645,55 +637,6 @@ async function doLogin(){
   }
 }
 
-/* ═══════════ STAFF ORDER PACKING ═══════════ */
-let STAFF_ORDERS=[];
-async function loadStaffOrders(){
-  const list=document.getElementById('staff-orders-list');
-  if(list) list.innerHTML='<div class="staff-empty">Loading orders…</div>';
-  try{
-    const data=await apiFetch('/orders');
-    STAFF_ORDERS=data.map(mapOrder).filter(o=>o.status==='Processing');
-    renderStaffOrders();
-  }catch(e){
-    if(list) list.innerHTML=`<div class="staff-empty"><strong>Could not load orders</strong>${escapeHtmlStaff(e.message||'Please try again.')}</div>`;
-    showToast('⚠️ Could not load staff orders: '+(e.message||'request failed'));
-  }
-}
-function escapeHtmlStaff(value){
-  return String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-}
-function renderStaffOrders(){
-  const list=document.getElementById('staff-orders-list'); if(!list)return;
-  const query=(document.getElementById('staff-order-search')?.value||'').trim().toLowerCase();
-  const orders=STAFF_ORDERS.filter(o=>!query||o.id.toLowerCase().includes(query)||o.items.toLowerCase().includes(query));
-  const packed=STAFF_ORDERS.filter(o=>!!o.packedAt).length;
-  document.getElementById('staff-total').textContent=STAFF_ORDERS.length;
-  document.getElementById('staff-awaiting').textContent=STAFF_ORDERS.length-packed;
-  document.getElementById('staff-packed').textContent=packed;
-  if(!orders.length){list.innerHTML=`<div class="staff-empty"><strong>${query?'No matching orders':'No Processing orders right now'}</strong>${query?'Try a different order number or product name.':'New orders will appear here when the admin moves them to Processing.'}</div>`;return;}
-  list.innerHTML=orders.map(o=>{
-    const lines=(o.lines||[]).map(i=>`<div class="staff-item-line"><span>${escapeHtmlStaff(i.name)} × ${i.qty}</span><span>${typeof fmtPeso==='function'?fmtPeso((i.price||0)*i.qty):''}</span></div>`).join('');
-    const packed=o.packedAt;
-    const stamp=packed?new Date(packed).toLocaleString('en-PH',{dateStyle:'medium',timeStyle:'short'}):'';
-    return `<article class="staff-order-card">
-      <div class="staff-order-top"><div><div class="staff-order-number">${escapeHtmlStaff(o.id)}</div><div class="staff-order-date">Placed ${escapeHtmlStaff(o.date||'')}</div></div><span class="${packed?'staff-packed-badge':'staff-awaiting-badge'}">${packed?'✓ PACKED':'AWAITING PACKING'}</span></div>
-      <div class="staff-order-grid"><div><div class="staff-order-label">Items to pack</div>${lines||'<div class="staff-item-line">Order items unavailable</div>'}</div><div><div class="staff-order-label">Shipping details</div><div class="staff-shipping-name">${escapeHtmlStaff(o.shippingName||'Recipient not provided')}</div><div class="staff-shipping-address">${escapeHtmlStaff(o.address||'Shipping address not provided')}</div></div></div>
-      <div class="staff-order-footer"><span class="staff-item-count">${(o.lines||[]).reduce((n,i)=>n+(Number(i.qty)||0),0)} item(s)${packed?' · Packed '+escapeHtmlStaff(stamp):''}</span><button class="staff-pack-btn" ${packed?'disabled':''} onclick="markStaffOrderPacked(${Number(o.dbId)})">${packed?'Already packed':'✓ Mark as packed'}</button></div>
-    </article>`;
-  }).join('');
-}
-async function markStaffOrderPacked(dbId){
-  const order=STAFF_ORDERS.find(o=>Number(o.dbId)===Number(dbId));
-  if(!order||order.packedAt)return;
-  try{
-    const updated=await apiFetch('/orders/'+dbId+'/packed',{method:'POST'});
-    order.packedAt=updated.packed_at||new Date().toISOString();
-    order.packedById=updated.packed_by_id||null;
-    renderStaffOrders();
-    showToast('Order '+order.id+' marked as packed. Customer notified.');
-  }catch(e){showToast('⚠️ '+(e.message||'Could not mark order as packed'));}
-}
-
 function doLogout(){
   currentUser=null;cart={};cartFromWishlist={};myOrders=[];activeCat='All';
   authToken=null;localStorage.removeItem('gvci_token');
@@ -701,7 +644,6 @@ function doLogout(){
   document.getElementById('inp-pass').value='';
   document.getElementById('screen-customer').classList.add('hidden');
   document.getElementById('screen-admin').classList.add('hidden');
-  document.getElementById('screen-staff').classList.add('hidden');
   document.getElementById('screen-login').classList.remove('hidden');
   showToast('Logged out. See you soon! 💄');
 }
@@ -1529,7 +1471,6 @@ function renderOrders(){
     const steps=[
       {label:'Order Placed',sub:'Order received & confirmed',status:'done'},
       {label:'Processing',sub:'Preparing your items',status:o.status==='Pending'?'pend':'done'},
-      {label:'Packed',sub:'Packed and ready for delivery',status:o.packedAt?'done':'pend'},
       {label:'Delivering',sub:'On its way to you',status:o.status==='Delivered'||o.status==='Shipped'?o.status==='Delivered'?'done':'act':'pend'},
       {label:'Delivered',sub:'Package delivered',status:o.status==='Delivered'?'done':'pend'},
     ];
@@ -2259,7 +2200,7 @@ function buildOrders(){
     </div>
     <div class="tbl-wrap"><div class="tbl-head"><h3>All Orders</h3><button class="btn-add" onclick="exportOrdersCSV()">Export CSV</button></div>
       <table class="a-table" style="table-layout:fixed;width:100%">
-        <thead><tr><th style="width:90px">Order ID</th><th style="width:110px">Customer</th><th>Items</th><th style="width:80px">Total</th><th style="width:55px">Date</th><th style="width:90px">Status</th><th style="width:78px">Packing</th><th style="width:55px">Proof</th><th style="width:115px">Update Status</th></tr></thead>
+        <thead><tr><th style="width:90px">Order ID</th><th style="width:110px">Customer</th><th>Items</th><th style="width:80px">Total</th><th style="width:55px">Date</th><th style="width:90px">Status</th><th style="width:55px">Proof</th><th style="width:115px">Update Status</th></tr></thead>
         <tbody id="orders-tbody">${renderOrderRows()}</tbody>
       </table></div>`;
 }
@@ -2276,7 +2217,6 @@ function renderOrderRows(){
       <td>${fmtPeso(o.total)}</td>
       <td>${o.date}</td>
       <td id="ord-badge-${o.id}"><span class="badge ${o.status==='Delivered'?'bg-green':o.status==='Shipped'?'bg-blue':o.status==='Processing'?'bg-amber':o.status==='Cancelled'?'bg-red':'bg-gray'}" ${o.cancelReason?`title="Cancelled: ${o.cancelReason.replace(/"/g,'&quot;')}"`:''}>${statusLabel(o.status)}</span></td>
-      <td>${o.packedAt?'<span class="badge bg-green">Packed</span>':'<span class="badge bg-gray">Not packed</span>'}</td>
       <td>${proof?`<img src="${proof.photo}" class="proof-thumb" onclick="viewDeliveryPhoto('${o.id}')" alt="proof" title="View delivery photo">`:'<span style="color:#CBD5E1;font-size:11px">—</span>'}</td>
       <td>
         <select style="font-size:11px;border:1px solid #E2E8F0;border-radius:6px;padding:4px 6px;width:100%;outline:none" onchange="updateOrderStatus('${o.id}',this.value)">
@@ -3021,12 +2961,7 @@ async function doLogin(){
   currentPass = pass;
 
   document.getElementById('screen-login').classList.add('hidden');
-  if(acc.role==='staff'){
-    document.getElementById('screen-staff').classList.remove('hidden');
-    document.getElementById('staff-avatar').textContent=acc.initials || (acc.name||'ST').split(' ').map(x=>x[0]).join('').slice(0,2).toUpperCase();
-    document.getElementById('staff-name').textContent=acc.name || 'Staff';
-    await loadStaffOrders();
-  } else if(acc.role==='customer'){
+  if(acc.role==='customer'){
     document.getElementById('screen-customer').classList.remove('hidden');
     document.getElementById('c-avatar').textContent=acc.initials;
     document.getElementById('prof-avatar-big').textContent=acc.initials;
@@ -3073,12 +3008,7 @@ async function tryRestoreSession(){
   displayName = acc.name;
 
   document.getElementById('screen-login').classList.add('hidden');
-  if(acc.role==='staff'){
-    document.getElementById('screen-staff').classList.remove('hidden');
-    document.getElementById('staff-avatar').textContent=acc.initials || (acc.name||'ST').split(' ').map(x=>x[0]).join('').slice(0,2).toUpperCase();
-    document.getElementById('staff-name').textContent=acc.name || 'Staff';
-    await loadStaffOrders();
-  } else if(acc.role==='customer'){
+  if(acc.role==='customer'){
     document.getElementById('screen-customer').classList.remove('hidden');
     document.getElementById('c-avatar').textContent=acc.initials;
     document.getElementById('prof-avatar-big').textContent=acc.initials;
