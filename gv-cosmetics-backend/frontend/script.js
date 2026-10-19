@@ -76,9 +76,9 @@ function priceHtml(p){
 
 /* Display-only label for order statuses. The underlying value stays 'Shipped'
    everywhere (comparisons, the status-update API call, backend enum) — only
-   what's shown to admins/customers reads "Delivering". */
+   what's shown to admins/customers reads "For Delivery". */
 function statusLabel(status){
-  return status==='Shipped' ? 'Delivering' : status;
+  return status==='Shipped' ? 'For Delivery' : status;
 }
 
 function formatOrderDate(iso) {
@@ -101,6 +101,7 @@ function mapOrder(o) {
     address: o.shipping_address,
     tracking: o.tracking_number,
     cancelReason: o.cancel_reason || null,
+    packedAt: o.packed_at || null,
     review: o.review ? { rating: o.review.stars, text: o.review.comment || '', images: o.review.images || [], customer: o.review.customer_name || '' } : null,
   };
 }
@@ -169,6 +170,7 @@ async function loadOrders() {
   const mapped = data.map(mapOrder);
   if (currentUser && currentUser.role === 'admin') {
     ORDERS_DATA = mapped;
+    if (typeof updatePackingBadge === 'function') updatePackingBadge();
   } else {
     myOrders = mapped;
   }
@@ -1482,8 +1484,8 @@ function renderOrders(){
     }
     const steps=[
       {label:'Order Placed',sub:'Order received & confirmed',status:'done'},
-      {label:'Processing',sub:'Preparing your items',status:o.status==='Pending'?'pend':'done'},
-      {label:'Delivering',sub:'On its way to you',status:o.status==='Delivered'||o.status==='Shipped'?o.status==='Delivered'?'done':'act':'pend'},
+      {label:'Processing',sub:o.packedAt?'Packed and ready for delivery':'Preparing your items',status:o.status==='Pending'?'pend':'done'},
+      {label:'For Delivery',sub:'On its way to you',status:o.status==='Delivered'||o.status==='Shipped'?o.status==='Delivered'?'done':'act':'pend'},
       {label:'Delivered',sub:'Package delivered',status:o.status==='Delivered'?'done':'pend'},
     ];
     const deliveryPhotos=loadDeliveryPhotos();
@@ -1515,6 +1517,7 @@ function renderOrders(){
         <span class="oc-price">₱${o.total.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
         <span class="badge ${o.status==='Delivered'?'bg-green':o.status==='Shipped'?'bg-blue':o.status==='Processing'?'bg-amber':o.status==='Cancelled'?'bg-red':'bg-gray'}">${statusLabel(o.status)}</span>
       </div>
+      ${o.status==='Processing'&&o.packedAt?`<div class="oc-addr" style="color:#166534;font-weight:600">📦 Packed — your order is ready for delivery</div>`:''}
       ${o.status==='Pending'?`<button class="btn-cancel-order" style="width:100%;margin-top:10px" onclick="openCancelModal(${o.dbId})">Cancel Order</button>`:''}
       ${o.status==='Cancelled'&&o.cancelReason?`<div class="oc-addr" style="color:var(--red,#DC2626)">✕ Cancelled: ${o.cancelReason}</div>`:''}
       ${trackHtml}
@@ -1798,14 +1801,14 @@ function onDbWeekChange(){
    screen only rebuilds when something actually changed (new order, status change...) */
 let lastAdminSig='';
 function adminDataSignature(){
-  return ORDERS_DATA.map(o=>o.id+':'+o.status+':'+o.total).join('|')
+  return ORDERS_DATA.map(o=>o.id+':'+o.status+':'+o.total+':'+(o.packedAt?1:0)).join('|')
     +'#'+PRODUCTS.length+':'+PRODUCTS.reduce((s,p)=>s+p.stock,0)+'#'+CUSTOMERS_DATA.length;
 }
 async function refreshAdminData(name){
   const before=adminDataSignature();
   try{
     if(name==='dashboard'||name==='analytics') await Promise.all([loadOrders(),loadProducts(),loadCustomers()]);
-    else if(name==='orders') await loadOrders();
+    else if(name==='orders'||name==='packing') await loadOrders();
     else return false;
   }catch(e){ return false; }
   return adminDataSignature()!==before;
@@ -1815,8 +1818,9 @@ setInterval(async()=>{
   if(!currentUser||currentUser.role!=='admin'||document.hidden) return;
   const panel=document.querySelector('.a-panel.on');
   const name=panel?panel.id.replace('ap-',''):'';
-  if(name!=='dashboard'&&name!=='analytics') return;
-  if(await refreshAdminData(name)) (name==='dashboard'?buildDashboard:buildAnalytics)();
+  const rebuild={dashboard:buildDashboard,analytics:buildAnalytics,packing:buildPacking}[name];
+  if(!rebuild) return;                       // other panels have forms/dropdowns, so they aren't redrawn on a timer
+  if(await refreshAdminData(name)) rebuild();
 },60000);
 
 function aPanel(name,el){
@@ -1824,13 +1828,13 @@ function aPanel(name,el){
   document.querySelectorAll('.a-item').forEach(n=>n.classList.remove('on'));
   document.getElementById('ap-'+name).classList.add('on');
   el.classList.add('on');
-  const builders={dashboard:buildDashboard,analytics:buildAnalytics,products:buildProducts,orders:buildOrders,customers:buildCustomers,approvals:buildApprovals,inventory:buildInventory};
+  const builders={dashboard:buildDashboard,analytics:buildAnalytics,products:buildProducts,orders:buildOrders,customers:buildCustomers,approvals:buildApprovals,inventory:buildInventory,packing:buildPacking};
   // Opening a panel starts from the default view (Monthly, This Week, ...)
   if(name==='dashboard'){ dbTopPeriod='month'; dbTopMetric='units'; dbWeekOffset=0; }
   if(name==='analytics'){ anTopPeriod='month'; anTopMetric='units'; anRevMonth='all'; anRevYear=new Date().getFullYear(); }
   if(builders[name])builders[name]();
   // ...then quietly pull the latest orders and redraw if a customer has bought something since
-  if(name==='dashboard'||name==='analytics'||name==='orders'){
+  if(name==='dashboard'||name==='analytics'||name==='orders'||name==='packing'){
     refreshAdminData(name).then(changed=>{
       const active=document.querySelector('.a-panel.on');
       if(changed && active && active.id==='ap-'+name && builders[name]) builders[name]();
@@ -1838,7 +1842,7 @@ function aPanel(name,el){
   }
 }
 
-function buildAdminAll(){buildDashboard();refreshAdminNotifBadge();}
+function buildAdminAll(){buildDashboard();refreshAdminNotifBadge();updatePackingBadge();}
 
 /* DASHBOARD */
 function buildDashboard(){
@@ -2257,7 +2261,7 @@ function renderOrderRows(){
       <td style="font-size:11px;color:#64748B;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${o.items}</td>
       <td>${fmtPeso(o.total)}</td>
       <td>${o.date}</td>
-      <td id="ord-badge-${o.id}"><span class="badge ${o.status==='Delivered'?'bg-green':o.status==='Shipped'?'bg-blue':o.status==='Processing'?'bg-amber':o.status==='Cancelled'?'bg-red':'bg-gray'}" ${o.cancelReason?`title="Cancelled: ${o.cancelReason.replace(/"/g,'&quot;')}"`:''}>${statusLabel(o.status)}</span></td>
+      <td id="ord-badge-${o.id}"><span class="badge ${o.status==='Delivered'?'bg-green':o.status==='Shipped'?'bg-blue':o.status==='Processing'?'bg-amber':o.status==='Cancelled'?'bg-red':'bg-gray'}" ${o.cancelReason?`title="Cancelled: ${o.cancelReason.replace(/"/g,'&quot;')}"`:''}>${statusLabel(o.status)}</span>${o.status==='Processing'&&o.packedAt?'<div style="font-size:10px;color:#166534;margin-top:3px;font-weight:600">📦 Packed</div>':''}</td>
       <td>${proof?`<img src="${proof.photo}" class="proof-thumb" onclick="viewDeliveryPhoto('${o.id}')" alt="proof" title="View delivery photo">`:'<span style="color:#CBD5E1;font-size:11px">—</span>'}</td>
       <td>
         <select style="font-size:11px;border:1px solid #E2E8F0;border-radius:6px;padding:4px 6px;width:100%;outline:none" onchange="updateOrderStatus('${o.id}',this.value)">
@@ -2277,6 +2281,77 @@ async function updateOrderStatus(orderId,newStatus){
   } catch(e){ showToast('⚠️ '+e.message); return; }
   showToast('Order '+orderId+' → '+statusLabel(newStatus)+'. Customer notified.');
   buildOrders();
+}
+
+/* ═══ PACKING (staff screen) ═══
+   Staff see every order that is in Processing, with exactly what to pack. When the
+   items are packed they press "Mark as Packed": the customer is notified that the order
+   is ready for delivery, and the admin can then move it to "For Delivery". */
+function updatePackingBadge(){
+  const el=document.getElementById('a-item-packing');
+  if(!el) return;
+  const n=ORDERS_DATA.filter(o=>o.status==='Processing'&&!o.packedAt).length;
+  el.textContent='Packing'+(n?' ('+n+')':'');
+}
+
+function buildPacking(){
+  const byDate=(a,b)=>(orderLocalDate(a.createdAt)||0)-(orderLocalDate(b.createdAt)||0);   // oldest first
+  const processing=ORDERS_DATA.filter(o=>o.status==='Processing');
+  const toPack=processing.filter(o=>!o.packedAt).sort(byDate);
+  const packed=processing.filter(o=>o.packedAt).sort(byDate);
+  const forDelivery=ORDERS_DATA.filter(o=>o.status==='Shipped').length;
+  const rows=[...toPack,...packed];
+
+  const itemsHtml=o=>(o.lines&&o.lines.length)
+    ? o.lines.map(l=>`<div><b>${l.qty}</b> × ${escHtml(l.name)}</div>`).join('')
+    : escHtml(o.items);
+  const packedTime=o=>{
+    const d=orderLocalDate(o.packedAt);
+    return d?d.toLocaleString('en-PH',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}):'';
+  };
+
+  document.getElementById('ap-packing').innerHTML=`<div class="a-title">Packing Station</div>
+    <div style="font-size:13px;color:#64748B;margin:-6px 0 16px">For staff: pack the items, then press <b>Mark as Packed</b> so the customer knows the order is ready for delivery.</div>
+    <div class="kpi-grid">
+      <div class="kpi"><div class="kpi-label">To Pack</div><div class="kpi-val ${toPack.length?'dn':''}">${toPack.length}</div><div class="kpi-sub">Orders in Processing</div></div>
+      <div class="kpi"><div class="kpi-label">Packed — Ready</div><div class="kpi-val up">${packed.length}</div><div class="kpi-sub">Waiting to be set For Delivery</div></div>
+      <div class="kpi"><div class="kpi-label">For Delivery</div><div class="kpi-val">${forDelivery}</div><div class="kpi-sub">On their way to customers</div></div>
+    </div>
+    <div class="tbl-wrap"><div class="tbl-head"><h3>Orders to Pack (oldest first)</h3></div>
+      <table class="a-table"><thead><tr><th>Order</th><th>Customer</th><th>Items to Pack</th><th>Deliver To</th><th>Placed</th><th>Action</th></tr></thead>
+      <tbody>${rows.length?rows.map(o=>`
+        <tr>
+          <td style="font-weight:600;color:var(--admin-accent)">${o.id}</td>
+          <td>${escHtml(o.customer)}</td>
+          <td style="font-size:12px;line-height:1.6">${itemsHtml(o)}</td>
+          <td style="font-size:12px;color:#64748B;max-width:220px">${escHtml(o.address||'—')}</td>
+          <td>${o.date}</td>
+          <td>${o.packedAt
+            ? `<span class="badge bg-green">✓ Packed ${packedTime(o)}</span><button class="btn-edit" style="margin:6px 0 0 0;display:block" onclick="packingSetForDelivery('${o.id}')">🚚 Set For Delivery</button>`
+            : `<button class="btn-save-inline" onclick="markOrderPacked('${o.id}')">📦 Mark as Packed</button>`}</td>
+        </tr>`).join('')
+        : `<tr><td colspan="6" style="text-align:center;padding:28px;color:#64748B">No orders to pack right now 🎉</td></tr>`}
+      </tbody></table></div>`;
+  updatePackingBadge();
+  lastAdminSig=adminDataSignature();
+}
+
+async function markOrderPacked(orderId){
+  const order=ORDERS_DATA.find(o=>o.id===orderId);
+  if(!order||order.status!=='Processing'||order.packedAt) return;
+  if(!confirm('Mark '+orderId+' as packed? The customer will be notified that it is ready for delivery.')) return;
+  try {
+    await apiFetch('/orders/'+order.dbId+'/packed',{ method:'POST' });
+    await loadOrders();
+  } catch(e){ showToast('⚠️ '+e.message); return; }
+  showToast('📦 '+orderId+' marked as packed. Customer notified.');
+  buildPacking();
+}
+
+async function packingSetForDelivery(orderId){
+  if(!confirm('Set '+orderId+' to For Delivery? The customer will be notified.')) return;
+  await updateOrderStatus(orderId,'Shipped');     // same call the Orders page uses
+  buildPacking();
 }
 
 /* CUSTOMERS */
@@ -2459,7 +2534,7 @@ async function reorderStock(id){
 }
 
 /* ═══ REVIEW ═══
-   Unlocked as soon as the admin sets the order to "Delivering" (Shipped) and stays
+   Unlocked as soon as the admin sets the order to "For Delivery" (Shipped) and stays
    available once Delivered. Customer picks stars, writes a comment, optionally adds
    up to 3 photos, then presses Submit -> POST /orders/:id/review. The backend also
    updates each product's star rating, so we reload orders + products afterwards. */
