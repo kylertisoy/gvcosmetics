@@ -63,6 +63,7 @@ class Product(Base):
     image_url = Column(Text, nullable=True)  # data URL (base64 JPEG) or hosted image URL
     manufacture_date = Column(Date, nullable=True)
     expiry_date = Column(Date, nullable=True)
+    sale_price = Column(Float, nullable=True)   # on sale when 0 < sale_price < price (set from the admin Products page)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     order_items = relationship("OrderItem", back_populates="product")
@@ -109,6 +110,10 @@ class Order(Base):
     # Set only when a customer cancels their own still-Pending order (see
     # routers/orders.py cancel_order); explains why, for the admin's benefit.
     cancel_reason = Column(String, nullable=True)
+
+    # Set by staff on the Packing screen when the items are packed and the order is ready
+    # for delivery (the order itself stays in Processing until the admin sets "For Delivery").
+    packed_at = Column(DateTime, nullable=True)
 
     user = relationship("User", back_populates="orders")
     items = relationship("OrderItem", back_populates="order", cascade="all, delete-orphan")
