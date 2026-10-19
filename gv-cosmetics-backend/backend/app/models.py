@@ -13,6 +13,7 @@ from .database import Base
 class Role(str, enum.Enum):
     customer = "customer"
     admin = "admin"
+    staff = "staff"
 
 
 class OrderStatus(str, enum.Enum):
@@ -99,6 +100,8 @@ class Order(Base):
     shipping_name = Column(String, nullable=True)
     shipping_address = Column(String, nullable=True)
     tracking_number = Column(String, nullable=True)
+    packed_at = Column(DateTime, nullable=True)
+    packed_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # --- Payment (PayMongo) ---
