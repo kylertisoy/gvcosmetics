@@ -116,9 +116,11 @@ def list_orders(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(auth.get_current_user),
 ):
-    """Customers see their own orders; admins see all orders."""
+    """Customers see their own orders, admins see all orders, and staff see Processing orders."""
     query = db.query(models.Order)
-    if current_user.role != models.Role.admin:
+    if current_user.role == models.Role.staff:
+        query = query.filter(models.Order.status == models.OrderStatus.Processing)
+    elif current_user.role != models.Role.admin:
         query = query.filter(models.Order.user_id == current_user.id)
     return query.order_by(models.Order.created_at.desc()).all()
 
@@ -132,8 +134,42 @@ def get_order(
     order = db.query(models.Order).filter(models.Order.id == order_id).first()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
-    if current_user.role != models.Role.admin and order.user_id != current_user.id:
+    if current_user.role == models.Role.staff:
+        if order.status != models.OrderStatus.Processing:
+            raise HTTPException(status_code=403, detail="Staff can only view processing orders")
+    elif current_user.role != models.Role.admin and order.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not authorized to view this order")
+    return order
+
+
+@router.post("/{order_id}/packed", response_model=schemas.OrderOut)
+def mark_order_packed(
+    order_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    """Staff mark a Processing order as packed without changing its order status."""
+    if current_user.role not in (models.Role.staff, models.Role.admin):
+        raise HTTPException(status_code=403, detail="Only staff can mark orders as packed")
+
+    order = db.query(models.Order).filter(models.Order.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    if order.status != models.OrderStatus.Processing:
+        raise HTTPException(status_code=400, detail="Only processing orders can be packed")
+    if order.packed_at is not None:
+        raise HTTPException(status_code=400, detail="This order has already been marked as packed")
+
+    order.packed_at = datetime.utcnow()
+    order.packed_by_id = current_user.id
+    db.add(models.Notification(
+        user_id=order.user_id,
+        title="Order Packed",
+        message=f"Your order {order.order_number} has been packed and is ready for delivery.",
+        type="packed",
+    ))
+    db.commit()
+    db.refresh(order)
     return order
 
 
