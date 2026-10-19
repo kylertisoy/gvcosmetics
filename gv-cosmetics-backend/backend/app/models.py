@@ -1,10 +1,10 @@
 import enum
-import jsonimport enum
 import json
 from datetime import datetime
 
 from sqlalchemy import (
-    Column, Integer, String, Float, Boolean, DateTime, Date, ForeignKey, Text, Enum
+    Column, Integer, String, Float, Boolean, DateTime, Date,
+    ForeignKey, Text, Enum
 )
 from sqlalchemy.orm import relationship
 
