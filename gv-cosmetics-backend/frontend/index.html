@@ -609,30 +609,6 @@ document.addEventListener('DOMContentLoaded', function(){
   </div>
 </div>
 
-<!-- ═══════════ STAFF PACKING SCREEN ═══════════ -->
-<div id="screen-staff" class="hidden">
-  <nav class="staff-topbar">
-    <div class="staff-brand">GV Cosmetics <span>Packing Desk</span></div>
-    <div class="staff-topbar-right">
-      <div class="staff-user"><span class="staff-avatar" id="staff-avatar">ST</span><span id="staff-name">Staff</span></div>
-      <button class="logout-btn-a" onclick="doLogout()">Log out</button>
-    </div>
-  </nav>
-  <main class="staff-main">
-    <div class="staff-heading-row">
-      <div><div class="staff-eyebrow">Order fulfillment</div><h1>Order Packing</h1><p>Review each order, prepare the items, and mark it as packed when it is ready for delivery.</p></div>
-      <button class="staff-refresh" onclick="loadStaffOrders()">↻ Refresh orders</button>
-    </div>
-    <div class="staff-stats">
-      <div class="staff-stat"><span>Processing orders</span><strong id="staff-total">0</strong></div>
-      <div class="staff-stat"><span>Awaiting packing</span><strong id="staff-awaiting">0</strong></div>
-      <div class="staff-stat"><span>Ready for delivery</span><strong id="staff-packed">0</strong></div>
-    </div>
-    <div class="staff-orders-head"><div><h2>Processing orders</h2><p>Orders stay in Processing until an administrator updates their delivery status.</p></div><input id="staff-order-search" type="search" placeholder="Search order number or item…" oninput="renderStaffOrders()" aria-label="Search orders"></div>
-    <div id="staff-orders-list" class="staff-orders-list"><div class="staff-empty">Loading orders…</div></div>
-  </main>
-</div>
-
 <!-- ═══ EMAIL CUSTOMER MODAL (admin, Customer Analysis) ═══ -->
 <div class="email-modal-bg" id="email-modal-bg" onclick="if(event.target===this)closeEmailModal()">
   <div class="email-modal">
