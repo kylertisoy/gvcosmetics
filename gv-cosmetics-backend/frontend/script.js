@@ -1833,6 +1833,7 @@ function aPanel(name,el){
   if(name==='dashboard'){ dbTopPeriod='month'; dbTopMetric='units'; dbWeekOffset=0; }
   if(name==='analytics'){ anTopPeriod='month'; anTopMetric='units'; anRevMonth='all'; anRevYear=new Date().getFullYear(); }
   if(builders[name])builders[name]();
+  if(name==='inventory') checkExpiryAlerts();
   // ...then quietly pull the latest orders and redraw if a customer has bought something since
   if(name==='dashboard'||name==='analytics'||name==='orders'||name==='packing'){
     refreshAdminData(name).then(changed=>{
@@ -1842,7 +1843,7 @@ function aPanel(name,el){
   }
 }
 
-function buildAdminAll(){buildDashboard();refreshAdminNotifBadge();updatePackingBadge();}
+function buildAdminAll(){buildDashboard();refreshAdminNotifBadge();updatePackingBadge();checkExpiryAlerts();}
 
 /* DASHBOARD */
 function buildDashboard(){
@@ -2480,6 +2481,16 @@ function buildInventory(){
     </div>
     ${lowStock.length||outStock.length?`<div style="background:#FEF2F2;border:1px solid #FECACA;border-radius:10px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:#B91C1C;font-weight:500">⚠️ ${lowStock.length} products are low on stock and ${outStock.length} are out of stock. Please reorder.</div>`:''}
     ${expired.length||nearExp.length?`<div style="background:#FEF2F2;border:1px solid #FECACA;border-radius:10px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:#B91C1C;font-weight:500">⛔ ${expired.length} product(s) have already expired and ${nearExp.length} are expiring within ${NEAR_EXPIRY_DAYS} days. Review stock before restocking or promoting these items.</div>`:''}
+    <div class="a-card" style="margin-bottom:16px">
+      <div class="a-card-head"><div><h3>📧 Expiry Alert Emails</h3>
+        <div style="font-size:11.5px;color:#64748B;margin-top:3px">We email these addresses when a product is within ${NEAR_EXPIRY_DAYS} days of expiring and again when it has expired. Each product is reported once.</div></div></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <input id="inv-alert-emails" placeholder="you@gmail.com, manager@gmail.com" style="flex:1;min-width:240px;border:1.5px solid #E2E8F0;border-radius:8px;padding:9px 12px;font-size:13px;font-family:'DM Sans',sans-serif">
+        <button class="btn-save-inline" onclick="saveAlertEmails()">Save</button>
+        <button class="btn-edit" onclick="sendAlertsNow()">Send alert now</button>
+      </div>
+      <div id="inv-alert-status" style="font-size:11.5px;color:#64748B;margin-top:8px">Loading…</div>
+    </div>
     <div class="tbl-wrap"><div class="tbl-head"><h3>Stock Levels</h3>
       <div style="display:flex;gap:8px;align-items:center">
         <button class="btn-risk${invRiskOnly?' on':''}" onclick="toggleExpiryRisk()">${invRiskOnly?'Show All Products':'⚠️ Show Expiry Risk Only'}</button>
@@ -2487,6 +2498,64 @@ function buildInventory(){
       </div></div>
       <table class="a-table"><thead><tr><th>Product</th><th>Category</th><th>Current Stock</th><th>Level</th><th>Status</th><th>Expiry</th><th>Reorder Qty</th><th>Action</th></tr></thead>
       <tbody id="inv-tbody">${renderInvRows()}</tbody></table></div>`;
+  loadAlertSettings();
+}
+
+/* ═══ EXPIRY ALERT EMAILS ═══
+   The admin chooses who receives them (up to 5 addresses; empty = the admin's own login
+   email). The server decides what is new and sends it, so each product is reported once. */
+const ALERT_EMAIL_RE=/^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+async function loadAlertSettings(){
+  const input=document.getElementById('inv-alert-emails'), status=document.getElementById('inv-alert-status');
+  if(!input||!status) return;
+  try {
+    const st=await apiFetch('/inventory/alert-settings');
+    input.value=(st.emails||[]).join(', ');
+    input.placeholder=st.default_email?'Empty = your admin email ('+st.default_email+')':'you@gmail.com, manager@gmail.com';
+    const sent=st.last_sent_at?new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(st.last_sent_at)?st.last_sent_at:st.last_sent_at+'Z'):null;
+    const lastText=sent?'Last alert sent: '+sent.toLocaleString('en-PH',{month:'short',day:'numeric',year:'numeric',hour:'2-digit',minute:'2-digit'}):'No alert has been sent yet.';
+    const toText=(st.emails&&st.emails.length)?'Alerts go to: '+st.emails.join(', '):'No address saved yet, so alerts go to your admin email ('+st.default_email+').';
+    status.textContent=toText+' · '+lastText;
+  } catch(e){ status.textContent='Could not load the alert settings: '+e.message; }
+}
+
+async function saveAlertEmails(){
+  const raw=document.getElementById('inv-alert-emails').value;
+  const emails=raw.split(/[,;\s]+/).map(e=>e.trim().toLowerCase()).filter(Boolean);
+  const bad=emails.find(e=>!ALERT_EMAIL_RE.test(e));
+  if(bad){ showToast('⚠️ "'+bad+'" is not a valid email address.'); return; }
+  try {
+    await apiFetch('/inventory/alert-settings',{ method:'PUT', body: JSON.stringify({ emails }) });
+  } catch(e){ showToast('⚠️ '+e.message); return; }
+  showToast(emails.length?'✅ Alert emails saved.':'✅ Saved. Alerts will go to your admin email.');
+  loadAlertSettings();
+}
+
+/* "Send alert now": emails everything that is near expiry or expired right now */
+async function sendAlertsNow(){
+  let r;
+  try {
+    r=await apiFetch('/inventory/expiry-alerts/send',{ method:'POST', body: JSON.stringify({ force:true }) });
+  } catch(e){ showToast('⚠️ '+e.message); return; }
+  if(r.sent) showToast('📧 Alert sent to '+r.recipients.join(', ')+' ('+r.expired+' expired, '+r.near+' near expiry).');
+  else if(r.reason==='nothing_to_report') showToast('No products are near expiry or expired right now.');
+  else if(r.reason==='no_recipient') showToast('⚠️ Add an email address first.');
+  else showToast('⚠️ The email could not be sent. Check the email service (Brevo) in your backend logs.');
+  loadAlertSettings();
+}
+
+/* Runs quietly when the admin logs in or opens Inventory: emails only what has not been reported yet */
+async function checkExpiryAlerts(){
+  try {
+    const r=await apiFetch('/inventory/expiry-alerts/send',{ method:'POST', body: JSON.stringify({ force:false }) });
+    if(r.sent){
+      showToast('📧 Expiry alert emailed to '+r.recipients.join(', ')+' ('+r.expired+' expired, '+r.near+' near expiry).');
+      loadAlertSettings();
+    } else if(r.reason==='send_failed'){
+      console.warn('Expiry alert could not be emailed. Check the email service (Brevo).');
+    }
+  } catch(e){ console.warn('Expiry alert check failed:',e.message); }
 }
 
 function renderInvRows(){
