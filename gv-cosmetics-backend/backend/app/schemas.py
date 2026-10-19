@@ -162,6 +162,8 @@ class OrderOut(BaseModel):
     shipping_name: Optional[str]
     shipping_address: Optional[str]
     tracking_number: Optional[str]
+    packed_at: Optional[datetime] = None
+    packed_by_id: Optional[int] = None
     customer_name: Optional[str] = None
     created_at: datetime
     items: List[OrderItemOut] = []
