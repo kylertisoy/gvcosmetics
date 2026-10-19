@@ -59,7 +59,19 @@ function productImgHtml(p, size){
 
 /* Map a backend product (category/emoji/description) to the shape the UI expects (cat/e/desc) */
 function mapProduct(p) {
-  return { id: p.id, name: p.name, cat: p.category, price: p.price, stock: p.stock, e: p.emoji, image: p.image_url || IMAGE_OVERRIDES[p.id], desc: p.description, badge: p.badge, avg_rating: p.avg_rating, rating_count: p.rating_count, mfg: p.manufacture_date || '', exp: p.expiry_date || '' };
+  return { id: p.id, name: p.name, cat: p.category, price: p.price, stock: p.stock, e: p.emoji, image: p.image_url || IMAGE_OVERRIDES[p.id], desc: p.description, badge: p.badge, avg_rating: p.avg_rating, rating_count: p.rating_count, mfg: p.manufacture_date || '', exp: p.expiry_date || '',
+           salePrice: p.sale_price > 0 ? p.sale_price : null };
+}
+
+/* ═══ SALE / BEST SELLER / NEW ARRIVAL (set by the admin on the Products page) ═══
+   - Best Sellers and New Arrivals come from each product's label (p.badge: 'hot' | 'new').
+   - A product is ON SALE when the admin has set a sale price below its regular price.
+     The same rule runs on the server (orders.py), so the price shown is the price charged. */
+function saleActive(p){ return p.salePrice!=null && p.salePrice>0 && p.salePrice<p.price; }
+function effPrice(p){ return saleActive(p) ? p.salePrice : p.price; }
+function salePct(p){ return saleActive(p) ? Math.round((1-p.salePrice/p.price)*100) : 0; }
+function priceHtml(p){
+  return saleActive(p) ? '<span class="p-old">'+fmtPeso(p.price)+'</span> '+fmtPeso(p.salePrice) : fmtPeso(p.price);
 }
 
 /* Display-only label for order statuses. The underlying value stays 'Shipped'
@@ -770,7 +782,7 @@ function renderProducts(){
   const list=PRODUCTS.filter(p=>{
     if(activeCat!=='All'&&p.cat!==activeCat)return false;
     if(q&&!p.name.toLowerCase().includes(q)&&!p.desc.toLowerCase().includes(q))return false;
-    if(p.price>priceMax)return false;
+    if(effPrice(p)>priceMax)return false;
     const r=productRatings[p.id];
     if(minRating>0&&(!r||parseFloat(r.avg)<minRating))return false;
     return true;
@@ -779,7 +791,7 @@ function renderProducts(){
   if(!list.length){grid.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:64px;color:var(--muted)"><div style="font-size:44px;margin-bottom:12px">🔍</div><p>No products found.</p></div>';return;}
   grid.innerHTML=list.map(p=>{
     const isLow=p.stock<30&&p.stock>0;
-    const badge=p.badge==='hot'?'<span class="p-badge">🔥 Hot</span>':p.badge==='new'?'<span class="p-badge new">✨ New</span>':'';
+    const badge=saleActive(p)?'<span class="p-badge" style="background:#D4A853">⚡ Sale −'+salePct(p)+'%</span>':p.badge==='hot'?'<span class="p-badge">🔥 Hot</span>':p.badge==='new'?'<span class="p-badge new">✨ New</span>':'';
     const inWL=wishlist.includes(p.id);
     const r=productRatings[p.id];
     const starsHtml=r?[1,2,3,4,5].map(i=>`<span class="s${i<=Math.round(parseFloat(r.avg))?' on':''}" onclick="event.stopPropagation();rateProduct(${p.id},${i})">${i<=Math.round(parseFloat(r.avg))?'★':'☆'}</span>`).join('')+'<span class="p-rating-txt">('+r.count+')</span>':'';
@@ -795,7 +807,7 @@ function renderProducts(){
         <div class="p-name">${p.name}</div>
         <div class="p-cat">${p.cat}</div>
         <div class="p-price-row">
-          <div class="p-price">₱${p.price.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+          <div class="p-price">${priceHtml(p)}</div>
         </div>
         <div class="p-stock ${isLow?'low':''}">${p.stock===0?'Out of stock':isLow?'⚠️ Only '+p.stock+' left':p.stock+' in stock'}</div>
         <button class="p-add" onclick="event.stopPropagation();addCart(${p.id})" ${p.stock===0||expired?'disabled':''}>
@@ -895,7 +907,7 @@ function renderWishlist(){
       <div class="p-info">
         <div class="p-name">${p.name}</div>
         <div class="p-cat">${p.cat}</div>
-        <div class="p-price-row"><div class="p-price">₱${p.price.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})}</div></div>
+        <div class="p-price-row"><div class="p-price">${priceHtml(p)}</div></div>
         <div class="p-stock ${p.stock===0?'low':''}">${p.stock===0?'Out of stock':p.stock+' in stock'}</div>
         <button class="p-add" onclick="event.stopPropagation();moveWishlistToCart(${p.id})" ${p.stock===0||expired?'disabled':''}>${expired?'Expired':'🛒 Add to Cart'}</button>
       </div>
@@ -1074,7 +1086,7 @@ function buildRecommendations(){
     <div class="reco-card">
       <div class="reco-emoji">${productImgHtml(p, 36)}</div>
       <div class="reco-name">${p.name}</div>
-      <div class="reco-price">₱${p.price.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+      <div class="reco-price">${priceHtml(p)}</div>
       <button class="reco-btn" onclick="addCart(${p.id})">🛒 Add to Cart</button>
     </div>`).join('');
 }
@@ -1156,12 +1168,12 @@ function renderCart(){
   if(!keys.length){body.innerHTML=`<div class="empty-state"><div class="empty-icon">🛒</div><h3>Your cart is empty</h3><p>Browse our GV Cosmetics collection and add items you love.</p><button onclick="cPage('shop',document.getElementById('cnav-shop'))">Start Shopping →</button></div>`;return;}
   let total=0;
   body.innerHTML=keys.map(id=>{
-    const p=PRODUCTS.find(x=>x.id==id);const sub=p.price*cart[id];total+=sub;
+    const p=PRODUCTS.find(x=>x.id==id);const sub=effPrice(p)*cart[id];total+=sub;
     return`<div class="cart-item">
       <div class="ci-img">${productImgHtml(p, 30)}</div>
       <div class="ci-info">
         <div class="ci-name">${p.name}</div>
-        <div class="ci-price">₱${p.price.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})} each</div>
+        <div class="ci-price">${priceHtml(p)} each</div>
         <div class="ci-qty">
           <button class="qb" onclick="adjCart(${id},-1)">−</button>
           <span style="font-size:13px;font-weight:600;min-width:22px;text-align:center">${cart[id]}</span>
@@ -1215,7 +1227,7 @@ function openCheckout(grand){
       </div>
       <div class="order-summary-box">
         <div class="os-title">Order Summary</div>
-        ${keys.map(id=>{const p=PRODUCTS.find(x=>x.id==id);return`<div class="os-row"><span>${p.name} × ${cart[id]}</span><span>₱${(p.price*cart[id]).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>`;}).join('')}
+        ${keys.map(id=>{const p=PRODUCTS.find(x=>x.id==id);return`<div class="os-row"><span>${p.name} × ${cart[id]}</span><span>${fmtPeso(effPrice(p)*cart[id])}</span></div>`;}).join('')}
         <div class="os-row os-total"><span>Total</span><span style="color:var(--rose)">₱${grand.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>
       </div>
       <div class="form-2col">
@@ -2060,12 +2072,14 @@ function buildProducts(){
         </div>
         <div><label style="font-size:11px;color:#64748B;display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:0.06em">Manufacturing Date</label><input type="date" id="pf-mfg"></div>
         <div><label style="font-size:11px;color:#64748B;display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:0.06em">Expiry Date</label><input type="date" id="pf-exp"></div>
+        <div><label style="font-size:11px;color:#64748B;display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:0.06em">Shop Label</label><select id="pf-badge"><option value="">None</option><option value="hot">🔥 Best Seller</option><option value="new">✨ New Arrival</option></select></div>
+        <div><label style="font-size:11px;color:#64748B;display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:0.06em">Sale Price (₱) — empty = not on sale</label><input type="number" id="pf-sale" placeholder="e.g. 12.00" step="0.01" min="0"></div>
         <div class="full"><label style="font-size:11px;color:#64748B;display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:0.06em">Description</label><textarea id="pf-desc" placeholder="Product description..."></textarea></div>
       </div>
       <div class="pf-actions"><button class="btn-save" onclick="saveProduct()">Save Product</button><button class="btn-cancel-form" onclick="resetProductForm()">Cancel</button></div>
     </div>
     <div class="tbl-wrap"><div class="tbl-head"><h3>All Products (<span id="prod-count">${PRODUCTS.length}</span>)</h3><button class="btn-add" onclick="resetProductForm();document.getElementById('pf-name').focus()">+ Add New</button></div>
-      <table class="a-table"><thead><tr><th>Product</th><th>Category</th><th>Price</th><th>Stock</th><th>Status</th><th>Expiry</th><th>Actions</th></tr></thead>
+      <table class="a-table"><thead><tr><th>Product</th><th>Category</th><th>Price</th><th>Stock</th><th>Status</th><th>Expiry</th><th>Promo</th><th>Actions</th></tr></thead>
       <tbody id="prod-tbody">${renderProdRows()}</tbody>
       </table></div>`;
 }
@@ -2079,6 +2093,14 @@ function renderProdRows(){
       <td><span class="badge ${p.stock===0?'bg-red':p.stock<30?'bg-amber':'bg-green'}">${p.stock}</span></td>
       <td>${p.stock===0?'<span class="badge bg-red">Out of Stock</span>':p.stock<30?'<span class="badge bg-amber">Low Stock</span>':'<span class="badge bg-green">In Stock</span>'}</td>
       <td>${expiryBadge(p)}${p.mfg?`<div style="font-size:10px;color:#94A3B8;margin-top:2px">Mfg ${fmtDate(p.mfg)}</div>`:''}</td>
+      <td>
+        <select class="period-select" title="Best Sellers / New Arrivals label" onchange="quickSetBadge(${p.id},this.value)">
+          <option value="" ${!p.badge?'selected':''}>—</option>
+          <option value="hot" ${p.badge==='hot'?'selected':''}>🔥 Best Seller</option>
+          <option value="new" ${p.badge==='new'?'selected':''}>✨ New Arrival</option>
+        </select>
+        ${saleActive(p)?`<div style="font-size:10px;color:#B45309;margin-top:4px;font-weight:600">⚡ Sale ${fmtPeso(p.salePrice)} (−${salePct(p)}%)</div>`:''}
+      </td>
       <td><button class="btn-edit" onclick="editProduct(${p.id})">Edit</button><button class="btn-del" onclick="deleteProduct(${p.id})">Delete</button></td>
     </tr>`).join('');
 }
@@ -2128,14 +2150,19 @@ async function saveProduct(){
   const exp=document.getElementById('pf-exp').value||null;
   if(!name||!price||isNaN(stock)){showToast('Please fill in all required fields.');return;}
   if(mfg&&exp&&exp<=mfg){showToast('Expiry date must be after the manufacturing date.');return;}
-  const payload={name,category:cat,price,stock,emoji,description:desc,manufacture_date:mfg,expiry_date:exp};
+  const badge=document.getElementById('pf-badge').value;
+  const saleRaw=document.getElementById('pf-sale').value.trim();
+  const sale=saleRaw===''?0:parseFloat(saleRaw);          // 0 = not on sale
+  if(saleRaw!==''&&(isNaN(sale)||sale<=0)){showToast('Enter a sale price above 0, or leave it empty.');return;}
+  if(sale>0&&sale>=price){showToast('The sale price must be lower than the regular price.');return;}
+  const payload={name,category:cat,price,stock,emoji,description:desc,manufacture_date:mfg,expiry_date:exp,badge,sale_price:sale};
   if(pfImageData) payload.image_url=pfImageData; // only sent when admin picked a new JPEG; leaves existing image untouched otherwise
   try {
     if(editingProductId){
       await apiFetch('/products/'+editingProductId, { method:'PUT', body: JSON.stringify(payload) });
       showToast('Product updated.');
     } else {
-      await apiFetch('/products', { method:'POST', body: JSON.stringify({...payload, badge:''}) });
+      await apiFetch('/products', { method:'POST', body: JSON.stringify(payload) });
       showToast('Product added.');
     }
     await loadProducts();
@@ -2143,6 +2170,17 @@ async function saveProduct(){
   resetProductForm();
   document.getElementById('prod-tbody').innerHTML=renderProdRows();
   updateProdCount();
+}
+
+/* Changes a product's Best Seller / New Arrival label straight from the table */
+async function quickSetBadge(id,value){
+  const p=PRODUCTS.find(x=>x.id===id); if(!p) return;
+  try {
+    await apiFetch('/products/'+id, { method:'PUT', body: JSON.stringify({ badge: value }) });
+    await loadProducts();
+  } catch(e){ showToast('⚠️ '+e.message); document.getElementById('prod-tbody').innerHTML=renderProdRows(); return; }
+  document.getElementById('prod-tbody').innerHTML=renderProdRows();
+  showToast(value==='hot'?'🔥 '+p.name+' is now a Best Seller.':value==='new'?'✨ '+p.name+' is now a New Arrival.':'Label removed from '+p.name+'.');
 }
 
 function editProduct(id){
@@ -2158,6 +2196,8 @@ function editProduct(id){
   document.getElementById('pf-desc').value=p.desc;
   document.getElementById('pf-mfg').value=p.mfg||'';
   document.getElementById('pf-exp').value=p.exp||'';
+  document.getElementById('pf-badge').value=p.badge||'';
+  document.getElementById('pf-sale').value=p.salePrice||'';
   const imgInput=document.getElementById('pf-image'); if(imgInput) imgInput.value='';
   const prev=document.getElementById('pf-image-preview');
   if(prev) prev.innerHTML = p.image ? `<img src="${p.image}" style="width:100%;height:100%;object-fit:cover">` : `<span style="font-size:26px">${p.e||'💄'}</span>`;
@@ -2179,8 +2219,9 @@ function resetProductForm(){
   editingProductId=null;
   pfImageData=null;
   document.getElementById('prod-form-title').textContent='Add New Product';
-  ['pf-name','pf-price','pf-stock','pf-desc','pf-mfg','pf-exp'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  ['pf-name','pf-price','pf-stock','pf-desc','pf-mfg','pf-exp','pf-sale'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   document.getElementById('pf-emoji').value='💄';
+  document.getElementById('pf-badge').value='';
   const imgInput=document.getElementById('pf-image'); if(imgInput) imgInput.value='';
   const prev=document.getElementById('pf-image-preview'); if(prev) prev.innerHTML='<span style="font-size:26px">💄</span>';
 }
@@ -2604,24 +2645,29 @@ function filterBadge(badge){
     const r=productRatings[p.id];
     const starsHtml=r?[1,2,3,4,5].map(i=>`<span class="s${i<=Math.round(parseFloat(r.avg))?' on':''}">${i<=Math.round(parseFloat(r.avg))?'★':'☆'}</span>`).join('')+'<span class="p-rating-txt">('+r.count+')</span>':'';
     const badgeHtml=p.badge==='hot'?'<span class="p-badge">🔥 Hot</span>':p.badge==='new'?'<span class="p-badge new">✨ New</span>':'';
-    return`<div class="p-card${isExpired(p)?' expired':''}" onclick="openProductModal(${p.id})">${isExpired(p)?'<span class="p-badge" style="background:#B91C1C">⛔ Expired</span>':badgeHtml}<div class="p-img">${productImgHtml(p)}<button class="p-wishlist" onclick="event.stopPropagation();toggleWishlist(${p.id})">${inWL?'❤️':'♡'}</button></div><div class="p-info">${r?`<div class="p-stars-row">${starsHtml}</div>`:''}<div class="p-name">${p.name}</div><div class="p-cat">${p.cat}</div><div class="p-price-row"><div class="p-price">₱${p.price.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})}</div></div><div class="p-stock ${p.stock===0?'low':''}">${p.stock===0?'Out of stock':p.stock+' in stock'}</div><button class="p-add" onclick="event.stopPropagation();addCart(${p.id})" ${p.stock===0||isExpired(p)?'disabled':''}>${isExpired(p)?'Expired':'🛒 Add to Cart'}</button></div></div>`;
+    return`<div class="p-card${isExpired(p)?' expired':''}" onclick="openProductModal(${p.id})">${isExpired(p)?'<span class="p-badge" style="background:#B91C1C">⛔ Expired</span>':badgeHtml}<div class="p-img">${productImgHtml(p)}<button class="p-wishlist" onclick="event.stopPropagation();toggleWishlist(${p.id})">${inWL?'❤️':'♡'}</button></div><div class="p-info">${r?`<div class="p-stars-row">${starsHtml}</div>`:''}<div class="p-name">${p.name}</div><div class="p-cat">${p.cat}</div><div class="p-price-row"><div class="p-price">${priceHtml(p)}</div></div><div class="p-stock ${p.stock===0?'low':''}">${p.stock===0?'Out of stock':p.stock+' in stock'}</div><button class="p-add" onclick="event.stopPropagation();addCart(${p.id})" ${p.stock===0||isExpired(p)?'disabled':''}>${isExpired(p)?'Expired':'🛒 Add to Cart'}</button></div></div>`;
   }).join('');
   document.getElementById('section-title').textContent=badge==='hot'?'🔥 Best Sellers':'✨ New Arrivals';
 }
 function triggerFlashSale(){
-   const onShop = document.getElementById('cpage-shop')?.classList.contains('active');
+  const onShop = document.getElementById('cpage-shop')?.classList.contains('active');
   if(!onShop){ cPage('shop',document.getElementById('cnav-shop')); }
-  // Filter products with a discount feel: show all sorted by price asc
   activeCat='All';
-  const list=[...PRODUCTS].sort((a,b)=>a.price-b.price);
+  // Only products the admin has put on sale, biggest discount first
+  const list=PRODUCTS.filter(saleActive).sort((a,b)=>salePct(b)-salePct(a));
   const grid=document.getElementById('products-grid');
+  document.getElementById('section-title').textContent='⚡ Flash Sale';
+  if(!list.length){
+    grid.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:64px;color:var(--v-muted)"><div style="font-size:44px;margin-bottom:12px">🏷️</div><p>No items are on sale right now. Check back soon!</p></div>';
+    return;
+  }
   grid.innerHTML=list.map(p=>{
     const inWL=wishlist.includes(p.id);
     const r=productRatings[p.id];
     const starsHtml=r?[1,2,3,4,5].map(i=>`<span class="s${i<=Math.round(parseFloat(r.avg))?' on':''}">${i<=Math.round(parseFloat(r.avg))?'★':'☆'}</span>`).join('')+'<span class="p-rating-txt">('+r.count+')</span>':'';
-    return`<div class="p-card${isExpired(p)?' expired':''}" style="border:2px solid #D4A853" onclick="openProductModal(${p.id})"><span class="p-badge" style="background:#D4A853">⚡ Sale</span><div class="p-img">${productImgHtml(p)}<button class="p-wishlist" onclick="event.stopPropagation();toggleWishlist(${p.id})">${inWL?'❤️':'♡'}</button></div><div class="p-info">${r?`<div class="p-stars-row">${starsHtml}</div>`:''}<div class="p-name">${p.name}</div><div class="p-cat">${p.cat}</div><div class="p-price-row"><div class="p-price"><span style="text-decoration:line-through;font-size:11px;color:var(--v-muted);font-family:Jost">₱${(p.price*1.15).toFixed(0)}</span> ₱${p.price.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})}</div></div><div class="p-stock ${p.stock===0?'low':''}">${p.stock===0?'Out of stock':p.stock+' in stock'}</div><button class="p-add" onclick="event.stopPropagation();addCart(${p.id})" ${p.stock===0||isExpired(p)?'disabled':''}>${isExpired(p)?'Expired':'🛒 Add to Cart'}</button></div></div>`;
+    const expired=isExpired(p);
+    return`<div class="p-card${expired?' expired':''}" style="border:2px solid #D4A853" onclick="openProductModal(${p.id})"><span class="p-badge" style="background:${expired?'#B91C1C':'#D4A853'}">${expired?'⛔ Expired':'⚡ Sale −'+salePct(p)+'%'}</span><div class="p-img">${productImgHtml(p)}<button class="p-wishlist" onclick="event.stopPropagation();toggleWishlist(${p.id})">${inWL?'❤️':'♡'}</button></div><div class="p-info">${r?`<div class="p-stars-row">${starsHtml}</div>`:''}<div class="p-name">${p.name}</div><div class="p-cat">${p.cat}</div><div class="p-price-row"><div class="p-price">${priceHtml(p)}</div></div><div class="p-stock ${p.stock===0?'low':''}">${p.stock===0?'Out of stock':p.stock+' in stock'}</div><button class="p-add" onclick="event.stopPropagation();addCart(${p.id})" ${p.stock===0||expired?'disabled':''}>${expired?'Expired':'🛒 Add to Cart'}</button></div></div>`;
   }).join('');
-  document.getElementById('section-title').textContent='⚡ Flash Sale';
 }
 function setCatAll(){
   activeCat='All';
@@ -2918,7 +2964,7 @@ function openProductModal(id){
       <div class="pm-cat">${p.cat}</div>
       <div class="pm-name">${p.name}</div>
       ${r?`<div class="pm-stars-row">${starsHtml}</div>`:''}
-      <div class="pm-price">₱${p.price.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+      <div class="pm-price">${priceHtml(p)}</div>
       <div class="pm-desc">${p.desc||'No description available.'}</div>
       <div class="pm-stock ${stockClass}">${stockText}</div>
       <div class="pm-actions">
