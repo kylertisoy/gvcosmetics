@@ -24,6 +24,20 @@ def _today_ph() -> date:
     return datetime.now(PH_TZ).date()
 
 
+def _effective_price(product) -> float:
+    """The price actually charged: the sale price when the admin has set one that is
+    lower than the regular price, otherwise the regular price. The shop page uses the
+    same rule, so the price a customer sees is the price they pay."""
+    sale = getattr(product, "sale_price", None)
+    if sale and 0 < sale < product.price:
+        return float(sale)
+    return float(product.price)
+
+
+# What customers read in notifications (the stored status value stays "Shipped")
+STATUS_LABELS = {"Shipped": "For Delivery"}
+
+
 def _gen_order_number(db: Session) -> str:
     count = db.query(models.Order).count()
     return f"ORD-{100 + count:03d}"
@@ -65,14 +79,15 @@ def create_order(
         if product.stock < item.quantity:
             raise HTTPException(status_code=400, detail=f"Not enough stock for {product.name}")
 
-        subtotal = product.price * item.quantity
+        unit_price = _effective_price(product)
+        subtotal = unit_price * item.quantity
         total += subtotal
         product.stock -= item.quantity
         order_items.append(
             models.OrderItem(
                 product_id=product.id,
                 product_name=product.name,
-                unit_price=product.price,
+                unit_price=unit_price,
                 quantity=item.quantity,
             )
         )
@@ -156,15 +171,46 @@ def update_order_status(
 
     type_map = {"Processing": "processing", "Shipped": "shipped", "Delivered": "delivered"}
     if payload.status in type_map:
+        label = STATUS_LABELS.get(payload.status, payload.status)
         db.add(
             models.Notification(
                 user_id=order.user_id,
-                title=f"Order {payload.status}",
-                message=f"Your order {order.order_number} is now {payload.status.lower()}.",
+                title=f"Order {label}",
+                message=f"Your order {order.order_number} is now {label.lower()}.",
                 type=type_map[payload.status],
             )
         )
 
+    db.commit()
+    db.refresh(order)
+    return order
+
+
+@router.post("/{order_id}/packed", response_model=schemas.OrderOut)
+def mark_order_packed(
+    order_id: int,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(auth.get_current_admin),
+):
+    """Staff mark an order as packed (items finished packaging) while it is still in
+    Processing. The customer gets a notification that it is ready for delivery."""
+    order = db.query(models.Order).filter(models.Order.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    if order.status != models.OrderStatus.Processing:
+        raise HTTPException(status_code=400, detail="Only orders in Processing can be marked as packed")
+    if order.packed_at:
+        raise HTTPException(status_code=400, detail="This order is already marked as packed")
+
+    order.packed_at = datetime.utcnow()
+    db.add(
+        models.Notification(
+            user_id=order.user_id,
+            title="Order Packed",
+            message=f"Good news! Your order {order.order_number} has been packed and is ready for delivery.",
+            type="processing",
+        )
+    )
     db.commit()
     db.refresh(order)
     return order
