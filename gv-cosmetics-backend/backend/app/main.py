@@ -18,9 +18,23 @@ Base.metadata.create_all(bind=engine)
 # tables - it never adds columns to a table that already exists - so these are
 # added here (safe to run on every start; works on SQLite, PostgreSQL and MySQL).
 _NEW_COLUMNS = {
-    "products":  [("manufacture_date", "DATE"), ("expiry_date", "DATE")],
-    "addresses": [("barangay", "VARCHAR(255)")],
-    "users":     [("reset_code_hash", "VARCHAR(255)"), ("reset_code_expires", "TIMESTAMP"), ("reset_attempts", "INTEGER DEFAULT 0")],
+    "products": [
+        ("manufacture_date", "DATE"),
+        ("expiry_date", "DATE"),
+    ],
+    "addresses": [
+        ("barangay", "VARCHAR(255)"),
+    ],
+    "users": [
+        ("approval_status", "VARCHAR(50) NOT NULL DEFAULT 'approved'"),
+        ("email_verified", "BOOLEAN NOT NULL DEFAULT FALSE"),
+        ("verification_code", "VARCHAR(255)"),
+        ("verification_code_expires", "TIMESTAMP"),
+        ("reset_code_hash", "VARCHAR(255)"),
+        ("reset_code_expires", "TIMESTAMP"),
+        ("reset_attempts", "INTEGER DEFAULT 0"),
+        ("loyalty_points", "INTEGER DEFAULT 0"),
+    ],
 }
 
 
