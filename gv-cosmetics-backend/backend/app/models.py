@@ -44,7 +44,11 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     addresses = relationship("Address", back_populates="user", cascade="all, delete-orphan")
-    orders = relationship("Order", back_populates="user")
+    orders = relationship(
+    "Order",
+    back_populates="user",
+    foreign_keys="Order.user_id"
+)
     wishlist_items = relationship("WishlistItem", back_populates="user", cascade="all, delete-orphan")
     ratings = relationship("Rating", back_populates="user", cascade="all, delete-orphan")
     notifications = relationship("Notification", back_populates="user", cascade="all, delete-orphan")
