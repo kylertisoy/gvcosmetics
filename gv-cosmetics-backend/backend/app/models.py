@@ -328,7 +328,11 @@ class Order(Base):
     # routers/orders.py cancel_order); explains why, for the admin's benefit.
     cancel_reason = Column(String, nullable=True)
 
-    user = relationship("User", back_populates="orders")
+        user = relationship(
+        "User",
+        back_populates="orders",
+        foreign_keys=[user_id]
+    )
     items = relationship("OrderItem", back_populates="order", cascade="all, delete-orphan")
     review = relationship("OrderReview", back_populates="order", uselist=False, cascade="all, delete-orphan")
 
