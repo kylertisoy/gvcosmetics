@@ -66,6 +66,7 @@ class ProductBase(BaseModel):
     image_url: Optional[str] = None
     manufacture_date: Optional[date] = None
     expiry_date: Optional[date] = None
+    sale_price: Optional[float] = None
 
 
 class ProductCreate(ProductBase):
@@ -83,6 +84,7 @@ class ProductUpdate(BaseModel):
     image_url: Optional[str] = None
     manufacture_date: Optional[date] = None
     expiry_date: Optional[date] = None
+    sale_price: Optional[float] = None
 
 
 class ProductOut(ProductBase):
@@ -168,6 +170,7 @@ class OrderOut(BaseModel):
     payment_method: str = "cod"
     payment_status: str = "unpaid"
     cancel_reason: Optional[str] = None
+    packed_at: Optional[datetime] = None
     review: Optional[ReviewOut] = None
 
 
