@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import inspect, text
 
 from .database import Base, engine
-from .routers import auth, products, orders, addresses, wishlist, notifications, customers, analytics, payments, admin_email, password_reset, inventory_alerts
+from .routers import auth, products, orders, addresses, wishlist, notifications, customers, analytics, payments, admin_email, password_reset, inventory_alerts, delivery
 
 load_dotenv()
 
@@ -19,7 +19,8 @@ Base.metadata.create_all(bind=engine)
 # added here (safe to run on every start; works on SQLite, PostgreSQL and MySQL).
 _NEW_COLUMNS = {
     "products":  [("manufacture_date", "DATE"), ("expiry_date", "DATE"), ("sale_price", "FLOAT")],
-    "orders":    [("packed_at", "TIMESTAMP")],
+    "orders":    [("packed_at", "TIMESTAMP"), ("rider_id", "INTEGER"), ("dest_lat", "FLOAT"), ("dest_lng", "FLOAT"),
+                  ("is_rush", "BOOLEAN DEFAULT FALSE"), ("delivered_at", "TIMESTAMP")],
     "addresses": [("barangay", "VARCHAR(255)")],
     "users":     [("reset_code_hash", "VARCHAR(255)"), ("reset_code_expires", "TIMESTAMP"), ("reset_attempts", "INTEGER DEFAULT 0")],
 }
@@ -62,6 +63,7 @@ app.include_router(payments.router)
 app.include_router(admin_email.router)
 app.include_router(password_reset.router)
 app.include_router(inventory_alerts.router)
+app.include_router(delivery.router)
 
 # Expiry alerts run by themselves: a check shortly after startup, then every few hours
 inventory_alerts.start_scheduler()
