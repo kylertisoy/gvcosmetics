@@ -115,6 +115,13 @@ class Order(Base):
     # for delivery (the order itself stays in Processing until the admin sets "For Delivery").
     packed_at = Column(DateTime, nullable=True)
 
+    # Delivery tracking (see routers/delivery.py)
+    rider_id = Column(Integer, nullable=True, index=True)   # plain number, no foreign key
+    dest_lat = Column(Float, nullable=True)                 # delivery address as a map point
+    dest_lng = Column(Float, nullable=True)
+    is_rush = Column(Boolean, default=False)
+    delivered_at = Column(DateTime, nullable=True)
+
     user = relationship("User", back_populates="orders")
     items = relationship("OrderItem", back_populates="order", cascade="all, delete-orphan")
     review = relationship("OrderReview", back_populates="order", uselist=False, cascade="all, delete-orphan")
@@ -226,3 +233,17 @@ class ExpiryAlertLog(Base):
     state = Column(String, nullable=False)          # 'near' | 'expired'
     expiry_date = Column(Date, nullable=False)
     sent_at = Column(DateTime, default=datetime.utcnow)
+
+
+class Rider(Base):
+    """A delivery rider. They have no login: the secret token in their personal link
+    (frontend/rider.html?t=TOKEN) identifies them when their phone sends its location."""
+    __tablename__ = "riders"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    token = Column(String, unique=True, nullable=False, index=True)
+    lat = Column(Float, nullable=True)
+    lng = Column(Float, nullable=True)
+    updated_at = Column(DateTime, nullable=True)       # when the last position arrived (UTC)
+    created_at = Column(DateTime, default=datetime.utcnow)
