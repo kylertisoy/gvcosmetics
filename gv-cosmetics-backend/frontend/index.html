@@ -6,6 +6,8 @@
 <title>GV Cosmetics — Beauty System</title>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&family=Jost:wght@300;400;500;600&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <link rel="stylesheet" href="style.css">
 <style>
 .hero-carousel-wrap{width:100%;display:flex;flex-direction:column;align-items:center;}
@@ -421,6 +423,7 @@
       <div class="a-item" onclick="aPanel('products',this)">Products</div>
       <div class="a-item" id="a-item-orders" onclick="aPanel('orders',this)">Orders</div>
       <div class="a-item" id="a-item-packing" onclick="aPanel('packing',this)">Packing</div>
+      <div class="a-item" id="a-item-deliveries" onclick="aPanel('deliveries',this)">Deliveries</div>
       <div class="a-item" onclick="aPanel('customers',this)">Customers</div>
       <div class="a-item" onclick="aPanel('approvals',this)">Pending Approvals</div>
       <div class="a-item" onclick="aPanel('inventory',this)">Inventory</div>
@@ -431,6 +434,7 @@
       <div id="ap-products" class="a-panel"></div>
       <div id="ap-orders" class="a-panel"></div>
       <div id="ap-packing" class="a-panel"></div>
+      <div id="ap-deliveries" class="a-panel"></div>
       <div id="ap-customers" class="a-panel"></div>
       <div id="ap-approvals" class="a-panel"></div>
       <div id="ap-inventory" class="a-panel"></div>
@@ -551,6 +555,17 @@ document.addEventListener('DOMContentLoaded', function(){
 <input type="file" id="delivery-photo-input" accept="image/*" capture="environment" style="display:none" onchange="handleDeliveryPhotoInput(event)">
 
 <!-- ═══ DELIVERY PHOTO VIEWER MODAL (admin review + customer's own confirmation) ═══ -->
+<!-- ═══ TRACK MY RIDER (customer) ═══ -->
+<div class="track-modal-bg" id="track-modal-bg" onclick="if(event.target===this)closeTrackModal()">
+  <div class="track-modal">
+    <button class="im-close pm-close" onclick="closeTrackModal()">✕</button>
+    <div class="track-title" id="track-title">Track your order</div>
+    <div class="track-status" id="track-status"></div>
+    <div id="track-map"></div>
+    <div class="track-foot">Map © OpenStreetMap contributors · Updates every 15 seconds</div>
+  </div>
+</div>
+
 <div class="photo-modal-bg" id="photo-modal-bg" onclick="closePhotoModal(event)">
   <div class="photo-modal" id="photo-modal">
     <button class="im-close pm-close" onclick="closePhotoModal()">✕</button>
