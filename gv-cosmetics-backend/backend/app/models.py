@@ -3,7 +3,7 @@ import json
 from datetime import datetime
 
 from sqlalchemy import (
-    Column, Integer, String, Float, Boolean, DateTime, Date, ForeignKey, Text, Enum
+    Column, Integer, String, Float, Boolean, DateTime, Date, ForeignKey, Text, Enum, UniqueConstraint
 )
 from sqlalchemy.orm import relationship
 
@@ -204,3 +204,25 @@ class OrderReview(Base):
     @property
     def customer_name(self):
         return self.user.name if self.user else None
+
+
+class AppSetting(Base):
+    """Small key/value settings store (for example the expiry-alert recipient emails)."""
+    __tablename__ = "app_settings"
+
+    key = Column(String, primary_key=True)
+    value = Column(Text, nullable=True)
+
+
+class ExpiryAlertLog(Base):
+    """Which expiry alerts have already been emailed, so the same product isn't reported
+    twice for the same state and expiry date. product_id is a plain number (no foreign
+    key) so deleting a product is never blocked by its alert history."""
+    __tablename__ = "expiry_alert_log"
+    __table_args__ = (UniqueConstraint("product_id", "state", "expiry_date", name="uq_expiry_alert"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    product_id = Column(Integer, nullable=False, index=True)
+    state = Column(String, nullable=False)          # 'near' | 'expired'
+    expiry_date = Column(Date, nullable=False)
+    sent_at = Column(DateTime, default=datetime.utcnow)
