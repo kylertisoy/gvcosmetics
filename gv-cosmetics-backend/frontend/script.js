@@ -2483,11 +2483,11 @@ function buildInventory(){
     ${expired.length||nearExp.length?`<div style="background:#FEF2F2;border:1px solid #FECACA;border-radius:10px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:#B91C1C;font-weight:500">⛔ ${expired.length} product(s) have already expired and ${nearExp.length} are expiring within ${NEAR_EXPIRY_DAYS} days. Review stock before restocking or promoting these items.</div>`:''}
     <div class="a-card" style="margin-bottom:16px">
       <div class="a-card-head"><div><h3>📧 Expiry Alert Emails</h3>
-        <div style="font-size:11.5px;color:#64748B;margin-top:3px">We email these addresses when a product is within ${NEAR_EXPIRY_DAYS} days of expiring and again when it has expired. Each product is reported once.</div></div></div>
+        <div style="font-size:11.5px;color:#64748B;margin-top:3px">Sent automatically, so you don't need to press anything. These addresses get an email when a product is within ${NEAR_EXPIRY_DAYS} days of expiring and again when it has expired. Each product is reported once.</div></div></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         <input id="inv-alert-emails" placeholder="you@gmail.com, manager@gmail.com" style="flex:1;min-width:240px;border:1.5px solid #E2E8F0;border-radius:8px;padding:9px 12px;font-size:13px;font-family:'DM Sans',sans-serif">
         <button class="btn-save-inline" onclick="saveAlertEmails()">Save</button>
-        <button class="btn-edit" onclick="sendAlertsNow()">Send alert now</button>
+        <button class="btn-edit" onclick="sendAlertsNow()" title="Optional, for testing: emails the full current list right now">Send a test now</button>
       </div>
       <div id="inv-alert-status" style="font-size:11.5px;color:#64748B;margin-top:8px">Loading…</div>
     </div>
@@ -2514,7 +2514,9 @@ async function loadAlertSettings(){
     input.value=(st.emails||[]).join(', ');
     input.placeholder=st.default_email?'Empty = your admin email ('+st.default_email+')':'you@gmail.com, manager@gmail.com';
     const sent=st.last_sent_at?new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(st.last_sent_at)?st.last_sent_at:st.last_sent_at+'Z'):null;
-    const lastText=sent?'Last alert sent: '+sent.toLocaleString('en-PH',{month:'short',day:'numeric',year:'numeric',hour:'2-digit',minute:'2-digit'}):'No alert has been sent yet.';
+    const fmtWhen=iso=>new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(iso)?iso:iso+'Z').toLocaleString('en-PH',{month:'short',day:'numeric',year:'numeric',hour:'2-digit',minute:'2-digit'});
+    const lastText=(sent?'Last alert sent: '+fmtWhen(st.last_sent_at):'No alert has been sent yet.')
+      +(st.last_checked_at?' · Last automatic check: '+fmtWhen(st.last_checked_at):'');
     const toText=(st.emails&&st.emails.length)?'Alerts go to: '+st.emails.join(', '):'No address saved yet, so alerts go to your admin email ('+st.default_email+').';
     status.textContent=toText+' · '+lastText;
   } catch(e){ status.textContent='Could not load the alert settings: '+e.message; }
