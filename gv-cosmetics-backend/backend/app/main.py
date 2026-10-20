@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import inspect, text
 
 from .database import Base, engine
-from .routers import auth, products, orders, addresses, wishlist, notifications, customers, analytics, payments, admin_email, password_reset
+from .routers import auth, products, orders, addresses, wishlist, notifications, customers, analytics, payments, admin_email, password_reset, inventory_alerts
 
 load_dotenv()
 
@@ -61,6 +61,7 @@ app.include_router(analytics.router)
 app.include_router(payments.router)
 app.include_router(admin_email.router)
 app.include_router(password_reset.router)
+app.include_router(inventory_alerts.router)
 
 
 @app.get("/")
