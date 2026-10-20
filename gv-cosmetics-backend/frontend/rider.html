@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GV Cosmetics – Rider</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#1c1c1a;font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;padding:20px}
+  .card{background:#fffefb;border-radius:16px;max-width:420px;width:100%;padding:28px 24px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.4)}
+  .brand{font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:#8a8580;margin-bottom:6px}
+  h1{margin:0 0 4px;font-size:24px;color:#1c1c1a}
+  #who{margin:0 0 20px;color:#5f5a54;font-size:15px}
+  button{width:100%;border:none;border-radius:12px;padding:18px;font-size:18px;font-weight:700;cursor:pointer;background:#16a34a;color:#fff}
+  button.on{background:#dc2626}
+  button:disabled{opacity:.5}
+  #status{margin:18px 0 4px;font-size:15px;color:#3a342e;min-height:44px;line-height:1.5}
+  #status.ok{color:#15803d} #status.bad{color:#b91c1c}
+  .hint{margin:14px 0 0;font-size:12.5px;color:#8a8580;line-height:1.6;text-align:left}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="brand">GV Cosmetics</div>
+  <h1>🚚 Rider location</h1>
+  <p id="who">Share your location so customers can see where you are.</p>
+  <button id="btn" onclick="toggleSharing()">Start sharing my location</button>
+  <div id="status">Not sharing yet.</div>
+  <p class="hint">
+    • Keep this page <b>open</b> and your <b>screen on</b> while you deliver.<br>
+    • Allow location access when your phone asks.<br>
+    • Tap <b>Stop sharing</b> when you are done for the day.<br>
+    • This is your personal link. Please don't share it with anyone else.
+  </p>
+</div>
+<script>
+  // IMPORTANT: this must be the SAME address as window.GVCI_API_BASE in index.html
+  const API_BASE = 'https://gvcosmetics-1.onrender.com';
+
+  const token = new URLSearchParams(location.search).get('t') || '';
+  let watchId = null, lastPos = null, lastSent = 0, timer = null, wakeLock = null, sharing = false;
+  const el = id => document.getElementById(id);
+  const say = (msg, cls) => { el('status').textContent = msg; el('status').className = cls || ''; };
+
+  if (!token) { say('This link is missing its code. Ask the admin to send your link again.', 'bad'); el('btn').disabled = true; }
+
+  async function send(pos) {
+    lastSent = Date.now();
+    try {
+      const res = await fetch(API_BASE + '/delivery/rider-ping', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, lat: pos.coords.latitude, lng: pos.coords.longitude })
+      });
+      if (res.status === 404) { stopSharing(); say('This link is not valid any more. Ask the admin for a new one.', 'bad'); return; }
+      if (!res.ok) throw new Error('server');
+      const data = await res.json();
+      el('who').textContent = 'Hi, ' + data.name + '!';
+      say('✅ Sharing your location. Last sent ' + new Date().toLocaleTimeString(), 'ok');
+    } catch (e) {
+      say('Could not reach the server. Trying again…', 'bad');
+    }
+  }
+
+  function onPosition(pos) {
+    lastPos = pos;
+    if (Date.now() - lastSent >= 8000) send(pos);      // at most one update every 8 seconds
+  }
+  function onError(err) {
+    const msg = err.code === 1 ? 'Location is blocked. Allow location access for this page in your phone settings, then try again.'
+      : 'Could not get your location yet. Make sure GPS is on.';
+    say(msg, 'bad');
+    if (err.code === 1) stopSharing();
+  }
+
+  async function keepScreenOn() {
+    try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch (e) {}
+  }
+  document.addEventListener('visibilitychange', () => { if (sharing && document.visibilityState === 'visible') keepScreenOn(); });
+
+  function startSharing() {
+    if (!navigator.geolocation) { say('This phone or browser cannot share location.', 'bad'); return; }
+    sharing = true;
+    el('btn').textContent = 'Stop sharing'; el('btn').className = 'on';
+    say('Getting your location…');
+    watchId = navigator.geolocation.watchPosition(onPosition, onError, { enableHighAccuracy: true, maximumAge: 5000, timeout: 30000 });
+    timer = setInterval(() => { if (sharing && lastPos && Date.now() - lastSent >= 15000) send(lastPos); }, 5000);   // keeps sending while parked
+    keepScreenOn();
+  }
+  function stopSharing() {
+    sharing = false;
+    if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+    watchId = null; clearInterval(timer);
+    try { if (wakeLock) wakeLock.release(); } catch (e) {}
+    el('btn').textContent = 'Start sharing my location'; el('btn').className = '';
+  }
+  function toggleSharing() {
+    if (sharing) { stopSharing(); say('Stopped. Customers can no longer see your location.'); }
+    else startSharing();
+  }
+</script>
+</body>
+</html>
