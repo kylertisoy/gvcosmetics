@@ -6,6 +6,15 @@ Expiry alert emails for the admin Inventory page.
   POST /inventory/expiry-alerts/send      -> check now; {"force": true} resends the full list
   GET  /inventory/expiry-alerts/cron?key= -> optional daily trigger for an outside scheduler
 
+It runs BY ITSELF - nobody needs to press a button:
+  * shortly after the server starts (a sleeping free Render server also "starts" again
+    whenever someone visits the shop), and
+  * every EXPIRY_ALERT_INTERVAL_HOURS (default 6) while the server stays awake,
+  * plus whenever an admin logs in or opens Inventory, and
+  * optionally from an outside daily scheduler through the /cron address below, which
+    covers quiet days when the free server is asleep and nobody visits.
+Set EXPIRY_ALERTS_AUTO=off to switch the automatic timer off.
+
 What triggers an email: a product with stock that is within 30 days of its expiry date
 ("near expiry"), or past it ("expired"). Each product is reported ONCE per state and
 expiry date, so opening the page again does not send the same email twice. If an expiry
@@ -20,6 +29,8 @@ automatically on startup.
 """
 import os
 import secrets
+import threading
+import time
 from datetime import date, datetime, timedelta, timezone
 from typing import List
 
@@ -28,7 +39,7 @@ from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
 
 from .. import models, auth
-from ..database import get_db
+from ..database import get_db, SessionLocal
 from ..emails import send_custom_email
 
 router = APIRouter(prefix="/inventory", tags=["inventory-alerts"])
@@ -37,6 +48,7 @@ NEAR_EXPIRY_DAYS = 30        # same window the Inventory page uses
 MAX_RECIPIENTS = 5
 KEY_EMAILS = "expiry_alert_emails"
 KEY_LAST_SENT = "expiry_alert_last_sent"
+KEY_LAST_CHECK = "expiry_alert_last_check"
 
 # Philippines is UTC+8 all year (no daylight saving)
 PH_TZ = timezone(timedelta(hours=8))
@@ -120,6 +132,8 @@ def run_expiry_alerts(db: Session, fallback_email, force: bool = False) -> dict:
     """Finds products that are near expiry / expired and emails the recipients.
     force=False reports only what hasn't been reported yet; force=True reports everything."""
     today = _today_ph()
+    if not force:
+        _set_setting(db, KEY_LAST_CHECK, datetime.utcnow().isoformat())   # "last automatic check" on the page
     expired, near = classify(db.query(models.Product).all(), today)
 
     logged = {(l.product_id, l.state, l.expiry_date) for l in db.query(models.ExpiryAlertLog).all()}
@@ -130,11 +144,13 @@ def run_expiry_alerts(db: Session, fallback_email, force: bool = False) -> dict:
     summary = {"sent": False, "expired": len(expired), "near": len(near), "recipients": []}
     if not expired and not near:
         summary["reason"] = "nothing_to_report" if force else "nothing_new"
+        db.commit()
         return summary
 
     recipients = _saved_emails(db) or ([fallback_email] if fallback_email else [])
     if not recipients:
         summary["reason"] = "no_recipient"
+        db.commit()
         return summary
 
     subject = f"[GV Cosmetics] Expiry alert: {len(expired)} expired, {len(near)} near expiry"
@@ -153,6 +169,7 @@ def run_expiry_alerts(db: Session, fallback_email, force: bool = False) -> dict:
         # Nothing went out, so don't mark anything as reported: it will be tried again.
         print("[expiry-alert] the email service did not send the alert")
         summary["reason"] = "send_failed"
+        db.commit()
         return summary
 
     for p, _ in expired:
@@ -168,6 +185,51 @@ def run_expiry_alerts(db: Session, fallback_email, force: bool = False) -> dict:
     return summary
 
 
+# ───────────── automatic checking ─────────────
+def run_scheduled_check() -> None:
+    """One automatic check with its own database session (used by the background timer)."""
+    db = SessionLocal()
+    try:
+        admin = db.query(models.User).filter(models.User.role == models.Role.admin).first()
+        result = run_expiry_alerts(db, admin.email if admin else None, force=False)
+        if result.get("sent"):
+            print(f"[expiry-alert] automatic alert sent to {result['recipients']}")
+    except Exception as e:      # never let a failed check take the server down
+        print(f"[expiry-alert] automatic check failed: {e}")
+        try:
+            db.rollback()
+        except Exception:
+            pass
+    finally:
+        db.close()
+
+
+_scheduler_started = False
+
+
+def start_scheduler(first_delay_seconds: int = 30) -> None:
+    """Starts the background timer (called once from main.py). It checks shortly after the
+    server starts, then every EXPIRY_ALERT_INTERVAL_HOURS (default 6) while it stays awake."""
+    global _scheduler_started
+    if _scheduler_started:
+        return
+    if os.getenv("EXPIRY_ALERTS_AUTO", "on").strip().lower() in ("off", "0", "false", "no"):
+        return
+    _scheduler_started = True
+    try:
+        hours = max(1.0, float(os.getenv("EXPIRY_ALERT_INTERVAL_HOURS", "6")))
+    except ValueError:
+        hours = 6.0
+
+    def loop():
+        time.sleep(first_delay_seconds)          # let the app finish starting up first
+        while True:
+            run_scheduled_check()
+            time.sleep(hours * 3600)
+
+    threading.Thread(target=loop, name="expiry-alerts", daemon=True).start()
+
+
 # ───────────── endpoints ─────────────
 @router.get("/alert-settings")
 def get_alert_settings(
@@ -178,6 +240,7 @@ def get_alert_settings(
         "emails": _saved_emails(db),
         "default_email": admin.email,
         "last_sent_at": _get_setting(db, KEY_LAST_SENT),
+        "last_checked_at": _get_setting(db, KEY_LAST_CHECK),
         "near_days": NEAR_EXPIRY_DAYS,
     }
 
