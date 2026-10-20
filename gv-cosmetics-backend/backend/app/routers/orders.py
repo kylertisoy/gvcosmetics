@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from .. import models, schemas, auth
 from ..database import get_db
+from .delivery import schedule_geocode
 
 router = APIRouter(prefix="/orders", tags=["orders"])
 
@@ -168,6 +169,8 @@ def update_order_status(
         raise HTTPException(status_code=400, detail=f"Status must be one of {valid_statuses}")
 
     order.status = models.OrderStatus(payload.status)
+    if payload.status == "Delivered":
+        order.delivered_at = datetime.utcnow()      # used by the Deliveries map ("delivered today")
 
     type_map = {"Processing": "processing", "Shipped": "shipped", "Delivered": "delivered"}
     if payload.status in type_map:
@@ -183,6 +186,8 @@ def update_order_status(
 
     db.commit()
     db.refresh(order)
+    if payload.status == "Shipped" and order.dest_lat is None:
+        schedule_geocode(order.id)      # find the delivery address on the map (in the background)
     return order
 
 
