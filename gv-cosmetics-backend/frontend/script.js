@@ -1518,6 +1518,7 @@ function renderOrders(){
         <span class="badge ${o.status==='Delivered'?'bg-green':o.status==='Shipped'?'bg-blue':o.status==='Processing'?'bg-amber':o.status==='Cancelled'?'bg-red':'bg-gray'}">${statusLabel(o.status)}</span>
       </div>
       ${o.status==='Processing'&&o.packedAt?`<div class="oc-addr" style="color:#166534;font-weight:600">📦 Packed — your order is ready for delivery</div>`:''}
+      ${o.status==='Shipped'?`<button class="btn-cancel-order" style="width:100%;margin-top:10px;background:none;border:1px solid var(--rose,#C2607E);color:var(--rose,#C2607E)" onclick="openTrackModal(${o.dbId},'${o.id}')">📍 Track my rider</button>`:''}
       ${o.status==='Pending'?`<button class="btn-cancel-order" style="width:100%;margin-top:10px" onclick="openCancelModal(${o.dbId})">Cancel Order</button>`:''}
       ${o.status==='Cancelled'&&o.cancelReason?`<div class="oc-addr" style="color:var(--red,#DC2626)">✕ Cancelled: ${o.cancelReason}</div>`:''}
       ${trackHtml}
@@ -1828,7 +1829,7 @@ function aPanel(name,el){
   document.querySelectorAll('.a-item').forEach(n=>n.classList.remove('on'));
   document.getElementById('ap-'+name).classList.add('on');
   el.classList.add('on');
-  const builders={dashboard:buildDashboard,analytics:buildAnalytics,products:buildProducts,orders:buildOrders,customers:buildCustomers,approvals:buildApprovals,inventory:buildInventory,packing:buildPacking};
+  const builders={dashboard:buildDashboard,analytics:buildAnalytics,products:buildProducts,orders:buildOrders,customers:buildCustomers,approvals:buildApprovals,inventory:buildInventory,packing:buildPacking,deliveries:buildDeliveries};
   // Opening a panel starts from the default view (Monthly, This Week, ...)
   if(name==='dashboard'){ dbTopPeriod='month'; dbTopMetric='units'; dbWeekOffset=0; }
   if(name==='analytics'){ anTopPeriod='month'; anTopMetric='units'; anRevMonth='all'; anRevYear=new Date().getFullYear(); }
@@ -2355,6 +2356,271 @@ async function packingSetForDelivery(orderId){
   buildPacking();
 }
 
+/* ═══ DELIVERIES (admin map) ═══
+   Shows every order that is "For Delivery" on a map, in the order the rider should visit
+   them (Rush first, then nearest next), with the rider's live position. The rider shares
+   their location from their own phone (rider.html); customers see the same position on
+   their order page. The map is OpenStreetMap via Leaflet (no API key needed). */
+const CDO_CENTER=[8.4542,124.6319];
+const DV_COLORS={current:'#F59E0B',pending:'#6B7280',done:'#16A34A',rush:'#DC2626',rider:'#2563EB'};
+let delivMap=null, delivLayer=null, delivBoard=null, delivSig='', delivPinFor=null, delivFitted=false;
+let delivRoutes={}, delivFetching=new Set();
+
+function haversineKm(a,b){
+  const R=6371, rad=x=>x*Math.PI/180;
+  const dLat=rad(b[0]-a[0]), dLng=rad(b[1]-a[1]);
+  const h=Math.sin(dLat/2)**2+Math.cos(rad(a[0]))*Math.cos(rad(b[0]))*Math.sin(dLng/2)**2;
+  return 2*R*Math.asin(Math.sqrt(h));
+}
+function timeAgo(iso){
+  if(!iso) return '';
+  const t=new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(iso)?iso:iso+'Z').getTime();
+  const s=Math.max(0,Math.round((Date.now()-t)/1000));
+  if(s<60) return s+' sec ago';
+  if(s<3600) return Math.round(s/60)+' min ago';
+  return Math.round(s/3600)+' hr ago';
+}
+
+/* Visiting order for one rider: Rush stops first, then always the nearest next stop, starting from the rider */
+function orderStops(start,stops){
+  const nearest=(from,list)=>{
+    const left=list.slice(), out=[]; let cur=from;
+    while(left.length){
+      let bi=0;
+      if(cur){ let best=Infinity; left.forEach((s,i)=>{ const d=haversineKm(cur,[s.lat,s.lng]); if(d<best){ best=d; bi=i; } }); }
+      const s=left.splice(bi,1)[0]; out.push(s); cur=[s.lat,s.lng];
+    }
+    return out;
+  };
+  const rush=nearest(start,stops.filter(s=>s.is_rush));
+  const last=rush.length?[rush[rush.length-1].lat,rush[rush.length-1].lng]:start;
+  return rush.concat(nearest(last,stops.filter(s=>!s.is_rush)));
+}
+
+/* Turns the server's board into what to draw */
+function delivPlan(board){
+  const active=board.orders.filter(o=>o.status==='Shipped');
+  const placed=active.filter(o=>o.lat!=null);
+  const riderIds=new Set(board.riders.map(r=>r.id));
+  return {
+    done: board.orders.filter(o=>o.status==='Delivered'&&o.lat!=null),
+    needsPin: active.filter(o=>o.lat==null),
+    unassigned: placed.filter(o=>o.rider_id==null||!riderIds.has(o.rider_id)),
+    riders: board.riders.map(r=>({
+      rider:r,
+      stops: orderStops(r.lat!=null?[r.lat,r.lng]:null, placed.filter(o=>o.rider_id===r.id))
+              .map((o,i)=>({o,seq:i+1,state:i===0?'current':'pending'}))
+    }))
+  };
+}
+
+function dvIcon(label,color,big){
+  const size=big?34:28;
+  return L.divIcon({className:'dv-pin',iconSize:[size,size],iconAnchor:[size/2,size/2],
+    html:`<div class="dv-dot" style="background:${color};width:${size}px;height:${size}px;line-height:${size-4}px">${label}</div>`});
+}
+const dvTruckIcon=()=>L.divIcon({className:'dv-pin',iconSize:[38,38],iconAnchor:[19,19],html:'<div class="dv-truck">🚚</div>'});
+
+async function fetchRoadRoute(points){
+  const coords=points.map(p=>p[1]+','+p[0]).join(';');
+  const res=await fetch('https://router.project-osrm.org/route/v1/driving/'+coords+'?overview=full&geometries=geojson');
+  const data=await res.json();
+  if(data.code!=='Ok') throw new Error('no route');
+  return data.routes[0].geometry.coordinates.map(c=>[c[1],c[0]]);
+}
+/* Draws the rider -> stops route. Road route when available, otherwise a dashed straight line. */
+function drawRoute(rider,stops){
+  if(!stops.length) return;
+  const pts=[[rider.lat,rider.lng]].concat(stops.map(s=>[s.o.lat,s.o.lng]));
+  const sig=pts.map(p=>p[0].toFixed(3)+','+p[1].toFixed(3)).join('|');
+  const cached=delivRoutes[rider.id];
+  if(cached&&cached.sig===sig){
+    L.polyline(cached.latlngs,cached.failed?{color:'#3B82F6',weight:3,opacity:.6,dashArray:'6 8'}:{color:'#3B82F6',weight:5,opacity:.85}).addTo(delivLayer);
+    return;
+  }
+  L.polyline(pts,{color:'#3B82F6',weight:3,opacity:.6,dashArray:'6 8'}).addTo(delivLayer);
+  const key=rider.id+':'+sig;
+  if(delivFetching.has(key)) return;
+  delivFetching.add(key);
+  fetchRoadRoute(pts)
+    .then(latlngs=>{ delivRoutes[rider.id]={sig,latlngs}; })
+    .catch(()=>{ delivRoutes[rider.id]={sig,latlngs:pts,failed:true}; })
+    .finally(()=>{ delivFetching.delete(key); if(delivRoutes[rider.id]&&!delivRoutes[rider.id].failed) drawDeliveryMap(); });
+}
+
+function drawDeliveryMap(){
+  if(!delivMap||!delivLayer||!delivBoard) return;
+  delivLayer.clearLayers();
+  const plan=delivPlan(delivBoard), bounds=[];
+  const pin=(o,label,color,big,tip)=>{
+    L.marker([o.lat,o.lng],{icon:dvIcon(label,color,big)}).addTo(delivLayer).bindTooltip(tip);
+    bounds.push([o.lat,o.lng]);
+  };
+  plan.done.forEach(o=>pin(o,'✓',DV_COLORS.done,false,escHtml(o.order_number)+' · '+escHtml(o.customer)+' · Delivered'));
+  plan.unassigned.forEach(o=>pin(o,'•',o.is_rush?DV_COLORS.rush:DV_COLORS.pending,false,escHtml(o.order_number)+' · '+escHtml(o.customer)+' · No rider yet'+(o.is_rush?' · RUSH':'')));
+  plan.riders.forEach(({rider,stops})=>{
+    stops.forEach(({o,seq,state})=>pin(o,String(seq),o.is_rush?DV_COLORS.rush:state==='current'?DV_COLORS.current:DV_COLORS.pending,state==='current',
+      '#'+seq+' '+escHtml(o.order_number)+' · '+escHtml(o.customer)+(state==='current'?' · Current stop':'')+(o.is_rush?' · RUSH':'')));
+    if(rider.lat!=null){
+      L.marker([rider.lat,rider.lng],{icon:dvTruckIcon(),zIndexOffset:1000}).addTo(delivLayer)
+        .bindTooltip(escHtml(rider.name)+' · '+(rider.fresh?'live':'last seen '+timeAgo(rider.updated_at)));
+      bounds.push([rider.lat,rider.lng]);
+      drawRoute(rider,stops);
+    }
+  });
+  if(!delivFitted&&bounds.length){ delivMap.fitBounds(bounds,{padding:[50,50],maxZoom:15}); delivFitted=true; }
+}
+
+function renderDeliveryTables(){
+  const b=delivBoard, plan=delivPlan(b);
+  const active=b.orders.filter(o=>o.status==='Shipped'), done=b.orders.filter(o=>o.status==='Delivered');
+  const live=b.riders.filter(r=>r.fresh).length;
+  document.getElementById('dv-kpis').innerHTML=`
+    <div class="kpi"><div class="kpi-label">For Delivery</div><div class="kpi-val">${active.length}</div><div class="kpi-sub">Out with riders</div></div>
+    <div class="kpi"><div class="kpi-label">Delivered Today</div><div class="kpi-val up">${done.length}</div><div class="kpi-sub">Completed</div></div>
+    <div class="kpi"><div class="kpi-label">Riders Live</div><div class="kpi-val">${live}<span style="font-size:15px;color:#94A3B8"> / ${b.riders.length}</span></div><div class="kpi-sub">Sharing their location</div></div>
+    <div class="kpi"><div class="kpi-label">Needs a Pin</div><div class="kpi-val ${plan.needsPin.length?'dn':''}">${plan.needsPin.length}</div><div class="kpi-sub">Address not on the map</div></div>`;
+
+  const seqOf={};
+  plan.riders.forEach(({stops})=>stops.forEach(s=>{ seqOf[s.o.id]=s; }));
+  const badge=(txt,color)=>`<span class="dv-badge" style="background:${color}">${txt}</span>`;
+  const rows=active.concat(done).map(o=>{
+    const isDone=o.status==='Delivered', s=seqOf[o.id];
+    const stopCell=isDone?badge('Delivered',DV_COLORS.done)
+      :o.is_rush?badge('Rush'+(s?' · #'+s.seq:''),DV_COLORS.rush)
+      :s?badge((s.state==='current'?'Current':'Pending')+' · #'+s.seq,s.state==='current'?DV_COLORS.current:DV_COLORS.pending)
+      :badge('No rider yet',DV_COLORS.pending);
+    const riderSel=isDone?'—':`<select style="font-size:12px;border:1px solid #E2E8F0;border-radius:6px;padding:4px 6px" onchange="assignRider(${o.id},this.value)">
+        <option value="">— no rider —</option>${b.riders.map(r=>`<option value="${r.id}" ${o.rider_id===r.id?'selected':''}>${escHtml(r.name)}</option>`).join('')}</select>`;
+    const rush=isDone?'':`<input type="checkbox" ${o.is_rush?'checked':''} onchange="toggleRush(${o.id},this.checked)" title="Deliver this one first">`;
+    const where=o.lat!=null?`<span style="color:#16A34A;font-size:12px">✓ on map</span> <a href="#" style="font-size:11px;color:#64748B" onclick="startPin(${o.id},'${escJS(o.order_number)}');return false;">re-pin</a>`
+      :`<button class="btn-edit" onclick="startPin(${o.id},'${escJS(o.order_number)}')">📍 Pin on map</button>`;
+    return `<tr style="${isDone?'opacity:.6':''}">
+      <td style="font-weight:600;color:var(--admin-accent)">${escHtml(o.order_number)}</td>
+      <td>${escHtml(o.customer)}</td>
+      <td style="font-size:12px;color:#64748B;max-width:240px">${escHtml(o.address||'—')}</td>
+      <td>${stopCell}</td><td>${riderSel}</td><td style="text-align:center">${rush}</td><td>${isDone&&o.lat==null?'—':where}</td></tr>`;
+  });
+  document.getElementById('dv-orders').innerHTML=rows.length?rows.join('')
+    :`<tr><td colspan="7" style="text-align:center;padding:28px;color:#64748B">No orders are out for delivery right now. Set an order to <b>For Delivery</b> and it appears here.</td></tr>`;
+
+  document.getElementById('dv-riders').innerHTML=b.riders.length?b.riders.map(r=>`
+    <div class="dv-rider-row">
+      <span class="dv-live" style="background:${r.fresh?'#16A34A':r.lat!=null?'#F59E0B':'#CBD5E1'}"></span>
+      <b>${escHtml(r.name)}</b>
+      <span style="color:#64748B;font-size:12px">${r.fresh?'Live now':r.lat!=null?'Last seen '+timeAgo(r.updated_at):'Not sharing yet'}</span>
+      <span style="flex:1"></span>
+      <button class="btn-edit" onclick="copyRiderLink('${escJS(r.token)}')">📋 Copy rider link</button>
+      <button class="btn-del" onclick="removeRider(${r.id},'${escJS(r.name)}')">Remove</button>
+    </div>`).join('')
+    :`<div style="color:#64748B;font-size:13px;padding:6px 0">No riders yet. Add one below, then send them their link.</div>`;
+}
+
+async function refreshDeliveries(force){
+  let board;
+  try { board=await apiFetch('/delivery/board'); }
+  catch(e){ const u=document.getElementById('dv-updated'); if(u) u.textContent='⚠️ Could not load deliveries: '+e.message; return; }
+  delivBoard=board;
+  const sig=JSON.stringify([board.orders.map(o=>[o.id,o.status,o.rider_id,o.is_rush,o.lat!=null]),board.riders.map(r=>[r.id,r.name,r.fresh])]);
+  if(force||sig!==delivSig){ delivSig=sig; if(document.getElementById('dv-orders')) renderDeliveryTables(); }
+  drawDeliveryMap();
+  const u=document.getElementById('dv-updated');
+  if(u) u.textContent='Updated '+new Date().toLocaleTimeString('en-PH',{hour:'2-digit',minute:'2-digit',second:'2-digit'})+' · refreshes every 15 seconds · route lines follow the roads when available';
+}
+
+async function buildDeliveries(){
+  const el=document.getElementById('ap-deliveries');
+  el.innerHTML=`<div class="a-title">Deliveries</div>
+    <div style="font-size:13px;color:#64748B;margin:-6px 0 16px">Orders that are <b>For Delivery</b> today. Give each order to a rider. The rider opens their link on a phone and shares their location, and the customer can see it from their order page.</div>
+    <div id="dv-kpis" class="kpi-grid"></div>
+    <div class="a-card" style="margin-bottom:16px;padding:0;overflow:hidden">
+      <div class="dv-map-wrap"><div id="dv-map"></div>
+        <div class="dv-legend"><span class="lg"><i style="background:${DV_COLORS.rider}"></i>Rider 🚚</span><span class="lg"><i style="background:${DV_COLORS.current}"></i>Current</span><span class="lg"><i style="background:${DV_COLORS.done}"></i>Completed</span><span class="lg"><i style="background:${DV_COLORS.pending}"></i>Pending</span><span class="lg"><i style="background:${DV_COLORS.rush}"></i>Rush</span></div>
+        <div id="dv-hint" class="dv-hint" style="display:none"></div></div>
+      <div id="dv-updated" style="font-size:11.5px;color:#64748B;padding:9px 16px">Loading…</div>
+    </div>
+    <div class="tbl-wrap"><div class="tbl-head"><h3>Today's Deliveries</h3></div>
+      <table class="a-table"><thead><tr><th>Order</th><th>Customer</th><th>Deliver To</th><th>Stop</th><th>Rider</th><th>Rush</th><th>Map Pin</th></tr></thead>
+      <tbody id="dv-orders"></tbody></table></div>
+    <div class="a-card" style="margin-top:16px"><h3>Riders</h3>
+      <div id="dv-riders"></div>
+      <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+        <input id="dv-rider-name" placeholder="Rider's name" maxlength="40" style="flex:1;min-width:180px;border:1.5px solid #E2E8F0;border-radius:8px;padding:9px 12px;font-size:13px" onkeydown="if(event.key==='Enter')addRider()">
+        <button class="btn-save-inline" onclick="addRider()">+ Add rider</button>
+      </div>
+    </div>`;
+  if(delivMap){ try{ delivMap.remove(); }catch(e){} delivMap=null; delivLayer=null; }
+  delivFitted=false; delivPinFor=null; delivSig=''; delivRoutes={}; delivFetching=new Set();
+  if(typeof L==='undefined'){
+    document.getElementById('dv-map').innerHTML='<div style="padding:60px 20px;text-align:center;color:#64748B">The map could not load. Check your internet connection and refresh the page.</div>';
+  } else {
+    delivMap=L.map('dv-map').setView(CDO_CENTER,12);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap contributors'}).addTo(delivMap);
+    delivLayer=L.layerGroup().addTo(delivMap);
+    delivMap.on('click',onDeliveryMapClick);
+    setTimeout(()=>{ if(delivMap) delivMap.invalidateSize(); },250);
+  }
+  await refreshDeliveries(true);
+}
+
+async function deliveryPatch(orderDbId,body,okMsg){
+  try { await apiFetch('/delivery/orders/'+orderDbId,{ method:'PATCH', body: JSON.stringify(body) }); }
+  catch(e){ showToast('⚠️ '+e.message); await refreshDeliveries(true); return false; }
+  if(okMsg) showToast(okMsg);
+  await refreshDeliveries(true);
+  return true;
+}
+function assignRider(orderDbId,value){
+  deliveryPatch(orderDbId, value===''?{clear_rider:true}:{rider_id:parseInt(value)}, value===''?'Rider removed from the order.':'🚚 Order given to the rider.');
+}
+function toggleRush(orderDbId,checked){
+  deliveryPatch(orderDbId,{is_rush:checked},checked?'🔴 Marked as Rush. It moves to the front of the route.':'Rush removed.');
+}
+function startPin(orderDbId,orderNo){
+  if(!delivMap){ showToast('The map is not available.'); return; }
+  delivPinFor=orderDbId;
+  const hint=document.getElementById('dv-hint');
+  hint.textContent='📍 Click the map where '+orderNo+' should be delivered';
+  hint.style.display='block';
+  delivMap.getContainer().style.cursor='crosshair';
+  document.getElementById('dv-map').scrollIntoView({behavior:'smooth',block:'center'});
+}
+async function onDeliveryMapClick(e){
+  if(delivPinFor==null) return;
+  const id=delivPinFor; delivPinFor=null;
+  document.getElementById('dv-hint').style.display='none';
+  delivMap.getContainer().style.cursor='';
+  await deliveryPatch(id,{lat:e.latlng.lat,lng:e.latlng.lng},'📍 Location saved.');
+}
+async function addRider(){
+  const input=document.getElementById('dv-rider-name'), name=input.value.trim();
+  if(!name){ showToast('Enter the rider\'s name first.'); return; }
+  try { await apiFetch('/delivery/riders',{ method:'POST', body: JSON.stringify({ name }) }); }
+  catch(e){ showToast('⚠️ '+e.message); return; }
+  input.value='';
+  showToast('✅ Rider added. Press "Copy rider link" and send it to them.');
+  refreshDeliveries(true);
+}
+async function removeRider(id,name){
+  if(!confirm('Remove '+name+'? Their orders become unassigned and their link stops working.')) return;
+  try { await apiFetch('/delivery/riders/'+id,{ method:'DELETE' }); }
+  catch(e){ showToast('⚠️ '+e.message); return; }
+  showToast('Rider removed.');
+  refreshDeliveries(true);
+}
+function copyRiderLink(token){
+  const link=new URL('rider.html?t='+encodeURIComponent(token),location.href).href;
+  const done=()=>showToast('📋 Rider link copied. Send it to the rider (Messenger, SMS).');
+  if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(link).then(done).catch(()=>prompt('Copy this rider link:',link));
+  else prompt('Copy this rider link:',link);
+}
+// While the admin is on the Deliveries screen, refresh the map every 15 seconds
+setInterval(()=>{
+  if(!currentUser||currentUser.role!=='admin'||document.hidden) return;
+  const p=document.querySelector('.a-panel.on');
+  if(p&&p.id==='ap-deliveries'&&delivMap) refreshDeliveries(false);
+},15000);
+
 /* CUSTOMERS */
 function buildCustomers(){
   const loyal=CUSTOMERS_DATA.filter(c=>c.seg==='Loyal');
@@ -2714,6 +2980,69 @@ async function submitReview(oid){
   try { await Promise.all([loadOrders(), loadProducts()]); } catch(e){}
   renderOrders();
   if(typeof renderProducts==='function') renderProducts();
+}
+
+/* ═══ TRACK MY RIDER (customer) ═══
+   Opens from "📍 Track my rider" on an order that is For Delivery. Shows the rider's live
+   position and the customer's address on a map, refreshing every 15 seconds. */
+let trackMap=null, trackLayer=null, trackTimer=null, trackFitted=false;
+
+async function openTrackModal(orderDbId,orderNo){
+  document.getElementById('track-title').textContent='Track '+orderNo;
+  document.getElementById('track-status').textContent='Looking for your rider…';
+  document.getElementById('track-modal-bg').classList.add('open');
+  clearInterval(trackTimer);
+  if(trackMap){ try{ trackMap.remove(); }catch(e){} trackMap=null; trackLayer=null; }
+  if(typeof L==='undefined'){
+    document.getElementById('track-map').innerHTML='<div style="padding:60px 20px;text-align:center;color:#64748B">The map could not load. Check your internet connection.</div>';
+    return;
+  }
+  document.getElementById('track-map').innerHTML='';
+  trackMap=L.map('track-map').setView(CDO_CENTER,12);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap contributors'}).addTo(trackMap);
+  trackLayer=L.layerGroup().addTo(trackMap);
+  trackFitted=false;
+  setTimeout(()=>{ if(trackMap) trackMap.invalidateSize(); },300);
+  await refreshTrack(orderDbId);
+  trackTimer=setInterval(()=>refreshTrack(orderDbId),15000);
+}
+function closeTrackModal(){
+  clearInterval(trackTimer);
+  document.getElementById('track-modal-bg').classList.remove('open');
+  if(trackMap){ try{ trackMap.remove(); }catch(e){} trackMap=null; trackLayer=null; }
+}
+async function refreshTrack(orderDbId){
+  let t;
+  try { t=await apiFetch('/delivery/track/'+orderDbId); }
+  catch(e){ document.getElementById('track-status').textContent='⚠️ Could not load the rider location: '+e.message; return; }
+  if(!trackMap||!trackLayer) return;
+  trackLayer.clearLayers();
+  const pts=[], status=document.getElementById('track-status');
+  if(!t.active){
+    status.textContent='This order is no longer out for delivery.';
+    return;
+  }
+  if(t.dest){
+    L.marker([t.dest.lat,t.dest.lng],{icon:dvIcon('🏠','#C2607E',true)}).addTo(trackLayer).bindTooltip('Your delivery address');
+    pts.push([t.dest.lat,t.dest.lng]);
+  }
+  const r=t.rider;
+  if(r&&r.lat!=null){
+    L.marker([r.lat,r.lng],{icon:dvTruckIcon(),zIndexOffset:1000}).addTo(trackLayer).bindTooltip(escHtml(r.name));
+    pts.push([r.lat,r.lng]);
+    const away=t.dest?haversineKm([r.lat,r.lng],[t.dest.lat,t.dest.lng]):null;
+    const dist=away!=null?' About '+(away<1?Math.round(away*1000)+' m':away.toFixed(1)+' km')+' away in a straight line.':'';
+    status.textContent=r.fresh?'🚚 '+r.name+' is on the way with your order. Location updated '+timeAgo(r.updated_at)+'.'+dist
+      :'🚚 '+r.name+' has your order. Their location was last updated '+timeAgo(r.updated_at)+', so it may be out of date.'+dist;
+  } else if(r){
+    status.textContent='🚚 '+r.name+' has your order. Their location will show here once they start sharing it.';
+  } else {
+    status.textContent='Your order is For Delivery. A rider will be assigned shortly, and their location will show here.';
+  }
+  if(pts.length&&(!trackFitted||pts.length>1)){
+    if(pts.length===1) trackMap.setView(pts[0],15); else trackMap.fitBounds(pts,{padding:[50,50],maxZoom:16});
+    trackFitted=pts.length>1||trackFitted;
+  }
 }
 
 /* ═══ MY STATS ═══ */
