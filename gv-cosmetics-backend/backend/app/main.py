@@ -63,6 +63,9 @@ app.include_router(admin_email.router)
 app.include_router(password_reset.router)
 app.include_router(inventory_alerts.router)
 
+# Expiry alerts run by themselves: a check shortly after startup, then every few hours
+inventory_alerts.start_scheduler()
+
 
 @app.get("/")
 def root():
