@@ -1,0 +1,22 @@
+# OPTIONAL: guarantees the expiry check runs once a day, even on days when nobody
+# visits the shop and the free Render server is asleep.
+# Put this file in your repository at:  .github/workflows/expiry-alerts.yml
+# It needs two repository secrets (Settings > Secrets and variables > Actions):
+#   API_BASE_URL   e.g.  https://gvcosmetics-api.onrender.com      (no slash at the end)
+#   ALERT_CRON_KEY the same value as the ALERT_CRON_KEY variable on Render
+name: Daily expiry alert check
+
+on:
+  schedule:
+    - cron: "0 0 * * *"      # 00:00 UTC = 8:00 AM Philippine time
+  workflow_dispatch: {}      # also lets you run it by hand from the Actions tab
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ask the backend to check for near-expiry / expired products
+        run: |
+          # --max-time 150 and --retry cover a free server that needs up to ~1 minute to wake up
+          curl --fail --silent --show-error --max-time 150 --retry 3 --retry-delay 30 --retry-all-errors \
+            "${{ secrets.API_BASE_URL }}/inventory/expiry-alerts/cron?key=${{ secrets.ALERT_CRON_KEY }}"
