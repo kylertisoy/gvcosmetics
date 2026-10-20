@@ -2487,7 +2487,6 @@ function buildInventory(){
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         <input id="inv-alert-emails" placeholder="you@gmail.com, manager@gmail.com" style="flex:1;min-width:240px;border:1.5px solid #E2E8F0;border-radius:8px;padding:9px 12px;font-size:13px;font-family:'DM Sans',sans-serif">
         <button class="btn-save-inline" onclick="saveAlertEmails()">Save</button>
-        <button class="btn-edit" onclick="sendAlertsNow()" title="Optional, for testing: emails the full current list right now">Send a test now</button>
       </div>
       <div id="inv-alert-status" style="font-size:11.5px;color:#64748B;margin-top:8px">Loading…</div>
     </div>
@@ -2531,19 +2530,6 @@ async function saveAlertEmails(){
     await apiFetch('/inventory/alert-settings',{ method:'PUT', body: JSON.stringify({ emails }) });
   } catch(e){ showToast('⚠️ '+e.message); return; }
   showToast(emails.length?'✅ Alert emails saved.':'✅ Saved. Alerts will go to your admin email.');
-  loadAlertSettings();
-}
-
-/* "Send alert now": emails everything that is near expiry or expired right now */
-async function sendAlertsNow(){
-  let r;
-  try {
-    r=await apiFetch('/inventory/expiry-alerts/send',{ method:'POST', body: JSON.stringify({ force:true }) });
-  } catch(e){ showToast('⚠️ '+e.message); return; }
-  if(r.sent) showToast('📧 Alert sent to '+r.recipients.join(', ')+' ('+r.expired+' expired, '+r.near+' near expiry).');
-  else if(r.reason==='nothing_to_report') showToast('No products are near expiry or expired right now.');
-  else if(r.reason==='no_recipient') showToast('⚠️ Add an email address first.');
-  else showToast('⚠️ The email could not be sent. Check the email service (Brevo) in your backend logs.');
   loadAlertSettings();
 }
 
