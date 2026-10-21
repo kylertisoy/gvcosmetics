@@ -19,6 +19,7 @@ Base.metadata.create_all(bind=engine)
 # added here (safe to run on every start; works on SQLite, PostgreSQL and MySQL).
 _NEW_COLUMNS = {
     "products":  [("manufacture_date", "DATE"), ("expiry_date", "DATE"), ("sale_price", "FLOAT")],
+    "riders":    [("phone", "VARCHAR(30)")],
     "orders":    [("packed_at", "TIMESTAMP"), ("rider_id", "INTEGER"), ("dest_lat", "FLOAT"), ("dest_lng", "FLOAT"),
                   ("is_rush", "BOOLEAN DEFAULT FALSE"), ("delivered_at", "TIMESTAMP")],
     "addresses": [("barangay", "VARCHAR(255)")],
