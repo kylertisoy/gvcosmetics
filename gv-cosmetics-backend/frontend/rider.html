@@ -4,43 +4,83 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>GV Cosmetics – Rider</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <style>
   *{box-sizing:border-box}
-  body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#1c1c1a;font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;padding:20px}
-  .card{background:#fffefb;border-radius:16px;max-width:420px;width:100%;padding:28px 24px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.4)}
-  .brand{font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:#8a8580;margin-bottom:6px}
-  h1{margin:0 0 4px;font-size:24px;color:#1c1c1a}
-  #who{margin:0 0 20px;color:#5f5a54;font-size:15px}
-  button{width:100%;border:none;border-radius:12px;padding:18px;font-size:18px;font-weight:700;cursor:pointer;background:#16a34a;color:#fff}
-  button.on{background:#dc2626}
-  button:disabled{opacity:.5}
-  #status{margin:18px 0 4px;font-size:15px;color:#3a342e;min-height:44px;line-height:1.5}
+  body{margin:0;background:#1c1c1a;font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;padding:14px;color:#1c1c1a}
+  .wrap{max-width:520px;margin:0 auto}
+  .card{background:#fffefb;border-radius:16px;padding:18px;margin-bottom:12px;box-shadow:0 10px 30px rgba(0,0,0,.35)}
+  .brand{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:#8a8580;text-align:center}
+  h1{margin:2px 0 2px;font-size:22px;text-align:center}
+  #who{margin:0 0 14px;color:#5f5a54;font-size:14px;text-align:center}
+  button{border:none;border-radius:12px;font-weight:700;cursor:pointer}
+  #btn{width:100%;padding:16px;font-size:17px;background:#16a34a;color:#fff}
+  #btn.on{background:#dc2626}
+  #btn:disabled{opacity:.5}
+  #status{margin:12px 0 0;font-size:14px;color:#3a342e;line-height:1.5;text-align:center}
   #status.ok{color:#15803d} #status.bad{color:#b91c1c}
-  .hint{margin:14px 0 0;font-size:12.5px;color:#8a8580;line-height:1.6;text-align:left}
+  #map{height:300px;border-radius:12px;background:#e5e7eb;isolation:isolate}
+  #routeinfo{font-size:13px;color:#4b5563;margin-top:8px;text-align:center;min-height:18px}
+  .h2{font-weight:700;font-size:15px;margin:0 0 10px}
+  .stop{border:1px solid #e5e7eb;border-radius:12px;padding:12px;margin-bottom:10px;background:#fff}
+  .stop.rush{border-color:#dc2626}
+  .row1{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+  .num{min-width:28px;height:28px;border-radius:50%;background:#6b7280;color:#fff;font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center}
+  .num.cur{background:#f59e0b} .num.rush{background:#dc2626}
+  .ono{font-weight:700} .tag{font-size:11px;font-weight:700;color:#fff;background:#dc2626;border-radius:10px;padding:2px 8px}
+  .cust{font-size:15px;font-weight:600;margin:2px 0} .addr{font-size:13px;color:#5f5a54;line-height:1.45}
+  .items{font-size:12.5px;color:#6b7280;margin:6px 0} .pay{font-size:13.5px;font-weight:700;margin:6px 0}
+  .pay.cash{color:#b45309} .pay.paid{color:#15803d}
+  .btns{display:flex;gap:8px;margin-top:8px}
+  .btns a,.btns button{flex:1;text-align:center;padding:13px 8px;font-size:14px;border-radius:10px;text-decoration:none;font-weight:700}
+  .nav{background:#2563eb;color:#fff} .done{background:#16a34a;color:#fff}
+  .empty{text-align:center;color:#6b7280;font-size:14px;padding:14px 4px;line-height:1.6}
+  .hint{margin:4px 2px 0;font-size:12px;color:#d6d3cd;line-height:1.7}
+  .dot{border-radius:50%;color:#fff;font:700 13px/26px system-ui,sans-serif;text-align:center;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.35)}
+  .pin{background:none;border:none}
 </style>
 </head>
 <body>
-<div class="card">
-  <div class="brand">GV Cosmetics</div>
-  <h1>🚚 Rider location</h1>
-  <p id="who">Share your location so customers can see where you are.</p>
-  <button id="btn" onclick="toggleSharing()">Start sharing my location</button>
-  <div id="status">Not sharing yet.</div>
+<div class="wrap">
+  <div class="card">
+    <div class="brand">GV Cosmetics</div>
+    <h1>🚚 Rider</h1>
+    <p id="who">Share your location so customers can see where you are.</p>
+    <button id="btn" onclick="toggleSharing()">Start sharing my location</button>
+    <div id="status">Not sharing yet.</div>
+  </div>
+
+  <div class="card">
+    <div id="map"></div>
+    <div id="routeinfo"></div>
+  </div>
+
+  <div class="card">
+    <div class="h2">Your deliveries</div>
+    <div id="orders"><div class="empty">Loading…</div></div>
+  </div>
+
   <p class="hint">
-    • Keep this page <b>open</b> and your <b>screen on</b> while you deliver.<br>
-    • Allow location access when your phone asks.<br>
-    • Tap <b>Stop sharing</b> when you are done for the day.<br>
+    • Start sharing and keep this page <b>open</b> with the <b>screen on</b>. You are only given orders while you are sharing.<br>
+    • New orders appear here by themselves. You will feel a short vibration.<br>
+    • Tap <b>Delivered</b> when the customer has received the order.<br>
     • This is your personal link. Please don't share it with anyone else.
   </p>
 </div>
+
 <script>
   // IMPORTANT: this must be the SAME address as window.GVCI_API_BASE in index.html
   const API_BASE = 'https://gvcosmetics-1.onrender.com';
 
   const token = new URLSearchParams(location.search).get('t') || '';
-  let watchId = null, lastPos = null, lastSent = 0, timer = null, wakeLock = null, sharing = false;
   const el = id => document.getElementById(id);
   const say = (msg, cls) => { el('status').textContent = msg; el('status').className = cls || ''; };
+  const esc = t => String(t == null ? '' : t).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const peso = n => '₱' + Number(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  /* ───────── sharing my location ───────── */
+  let watchId = null, lastPos = null, lastSent = 0, timer = null, wakeLock = null, sharing = false;
 
   if (!token) { say('This link is missing its code. Ask the admin to send your link again.', 'bad'); el('btn').disabled = true; }
 
@@ -57,25 +97,24 @@
       const data = await res.json();
       el('who').textContent = 'Hi, ' + data.name + '!';
       say('✅ Sharing your location. Last sent ' + new Date().toLocaleTimeString(), 'ok');
+      if (data.assigned > 0) loadOrders();             // the system just gave me an order
     } catch (e) {
       say('Could not reach the server. Trying again…', 'bad');
     }
   }
-
   function onPosition(pos) {
     lastPos = pos;
-    if (Date.now() - lastSent >= 8000) send(pos);      // at most one update every 8 seconds
+    const next = planned()[0];
+    if (next && next.id !== firstId) renderOrders();    // the nearest stop changed: re-number the list too
+    drawMap();                                          // my own dot moves right away
+    if (Date.now() - lastSent >= 8000) send(pos);       // at most one update every 8 seconds
   }
   function onError(err) {
-    const msg = err.code === 1 ? 'Location is blocked. Allow location access for this page in your phone settings, then try again.'
-      : 'Could not get your location yet. Make sure GPS is on.';
-    say(msg, 'bad');
+    say(err.code === 1 ? 'Location is blocked. Allow location access for this page in your phone settings, then try again.'
+                       : 'Could not get your location yet. Make sure GPS is on.', 'bad');
     if (err.code === 1) stopSharing();
   }
-
-  async function keepScreenOn() {
-    try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch (e) {}
-  }
+  async function keepScreenOn() { try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch (e) {} }
   document.addEventListener('visibilitychange', () => { if (sharing && document.visibilityState === 'visible') keepScreenOn(); });
 
   function startSharing() {
@@ -95,9 +134,145 @@
     el('btn').textContent = 'Start sharing my location'; el('btn').className = '';
   }
   function toggleSharing() {
-    if (sharing) { stopSharing(); say('Stopped. Customers can no longer see your location.'); }
+    if (sharing) { stopSharing(); say('Stopped. Customers can no longer see your location, and you will not be given new orders.'); }
     else startSharing();
   }
+
+  /* ───────── my deliveries + map ───────── */
+  let orders = [], prevCount = null, map = null, layer = null, routeSig = '', routeCache = null, fitted = false, routing = false, firstId = null;
+  const CDO = [8.4542, 124.6319];
+
+  function km(a, b) {
+    const r = x => x * Math.PI / 180, dLat = r(b[0] - a[0]), dLng = r(b[1] - a[1]);
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos(r(a[0])) * Math.cos(r(b[0])) * Math.sin(dLng / 2) ** 2;
+    return 12742 * Math.asin(Math.sqrt(h));
+  }
+  /* Visiting order: Rush first, then always the nearest next stop, starting from where I am */
+  function orderStops(start, stops) {
+    const nearest = (from, list) => {
+      const left = list.slice(), out = []; let cur = from;
+      while (left.length) {
+        let bi = 0;
+        if (cur) { let best = Infinity; left.forEach((s, i) => { const d = km(cur, [s.lat, s.lng]); if (d < best) { best = d; bi = i; } }); }
+        const s = left.splice(bi, 1)[0]; out.push(s); cur = [s.lat, s.lng];
+      }
+      return out;
+    };
+    const rush = nearest(start, stops.filter(s => s.is_rush));
+    const last = rush.length ? [rush[rush.length - 1].lat, rush[rush.length - 1].lng] : start;
+    return rush.concat(nearest(last, stops.filter(s => !s.is_rush)));
+  }
+  const myPoint = () => lastPos ? [lastPos.coords.latitude, lastPos.coords.longitude] : null;
+  const planned = () => orderStops(myPoint(), orders.filter(o => o.lat != null));
+
+  function initMap() {
+    if (typeof L === 'undefined') { el('map').innerHTML = '<div class="empty">The map could not load. Check your internet connection.</div>'; return; }
+    map = L.map('map').setView(CDO, 12);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap contributors' }).addTo(map);
+    layer = L.layerGroup().addTo(map);
+    setTimeout(() => map.invalidateSize(), 250);
+  }
+  const dot = (label, color, size) => L.divIcon({ className: 'pin', iconSize: [size, size], iconAnchor: [size / 2, size / 2],
+    html: '<div class="dot" style="background:' + color + ';width:' + size + 'px;height:' + size + 'px">' + label + '</div>' });
+
+  async function roadRoute(a, b) {
+    const res = await fetch('https://router.project-osrm.org/route/v1/driving/' + a[1] + ',' + a[0] + ';' + b[1] + ',' + b[0] + '?overview=full&geometries=geojson');
+    const data = await res.json();
+    if (data.code !== 'Ok') throw new Error('no route');
+    return { pts: data.routes[0].geometry.coordinates.map(c => [c[1], c[0]]), km: data.routes[0].distance / 1000, min: data.routes[0].duration / 60 };
+  }
+
+  function drawMap() {
+    if (!map || !layer) return;
+    layer.clearLayers();
+    const me = myPoint(), stops = planned(), bounds = [];
+    stops.forEach((s, i) => {
+      const color = s.is_rush ? '#DC2626' : i === 0 ? '#F59E0B' : '#6B7280';
+      L.marker([s.lat, s.lng], { icon: dot(String(i + 1), color, i === 0 ? 34 : 28) }).addTo(layer).bindTooltip(esc(s.customer));
+      bounds.push([s.lat, s.lng]);
+    });
+    if (me) { L.marker(me, { icon: dot('🚚', '#2563EB', 36), zIndexOffset: 1000 }).addTo(layer); bounds.push(me); }
+    // road route from me to the NEXT customer
+    const next = stops[0], info = el('routeinfo');
+    if (me && next) {
+      const sig = [me[0].toFixed(3), me[1].toFixed(3), next.id].join('|');
+      if (routeCache && routeCache.sig === sig && routeCache.failed) {
+        L.polyline(routeCache.pts, { color: '#3B82F6', weight: 3, opacity: .6, dashArray: '6 8' }).addTo(layer);
+        info.textContent = 'Next stop: ' + next.customer + ' · about ' + routeCache.km.toFixed(1) + ' km in a straight line';
+      } else if (routeCache && routeCache.sig === sig) {
+        L.polyline(routeCache.pts, { color: '#3B82F6', weight: 5, opacity: .85 }).addTo(layer);
+        info.textContent = 'Next stop: ' + next.customer + ' · ' + routeCache.km.toFixed(1) + ' km · about ' + Math.max(1, Math.round(routeCache.min)) + ' min';
+      } else {
+        L.polyline([me, [next.lat, next.lng]], { color: '#3B82F6', weight: 3, opacity: .6, dashArray: '6 8' }).addTo(layer);
+        info.textContent = 'Next stop: ' + next.customer + ' · about ' + km(me, [next.lat, next.lng]).toFixed(1) + ' km in a straight line';
+        if (!routing) {
+          routing = true;
+          roadRoute(me, [next.lat, next.lng]).then(r => { routeCache = { sig, ...r }; }).catch(() => { routeCache = { sig, pts: [me, [next.lat, next.lng]], km: km(me, [next.lat, next.lng]), min: 0, failed: true }; })
+            .finally(() => { routing = false; drawMap(); });
+        }
+      }
+    } else info.textContent = next ? 'Start sharing your location to see the route.' : '';
+    if (!fitted && bounds.length) { map.fitBounds(bounds, { padding: [40, 40], maxZoom: 15 }); fitted = true; }
+  }
+
+  function renderOrders() {
+    const box = el('orders');
+    if (!orders.length) {
+      box.innerHTML = '<div class="empty">No deliveries right now. 🙌<br>' + (sharing ? 'New orders will appear here by themselves.' : 'Tap <b>Start sharing my location</b> to be given orders.') + '</div>';
+      return;
+    }
+    const ordered = planned().concat(orders.filter(o => o.lat == null));
+    firstId = ordered.length && ordered[0].lat != null ? ordered[0].id : null;
+    box.innerHTML = ordered.map((o, i) => {
+      const located = o.lat != null;
+      const nav = located ? 'https://www.google.com/maps/dir/?api=1&destination=' + o.lat + ',' + o.lng + '&travelmode=driving'
+                          : 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(o.address || '');
+      const cash = o.payment_method === 'cod' && o.payment_status !== 'paid';
+      return '<div class="stop' + (o.is_rush ? ' rush' : '') + '">' +
+        '<div class="row1"><div class="num' + (o.is_rush ? ' rush' : i === 0 ? ' cur' : '') + '">' + (located ? i + 1 : '?') + '</div>' +
+        '<span class="ono">' + esc(o.order_number) + '</span>' + (o.is_rush ? '<span class="tag">RUSH</span>' : '') + '</div>' +
+        '<div class="cust">' + esc(o.customer) + '</div><div class="addr">📍 ' + esc(o.address) + '</div>' +
+        (located ? '' : '<div class="addr" style="color:#b45309">Map pin not set yet. Use the address below.</div>') +
+        '<div class="items">' + o.items.map(it => it.qty + ' × ' + esc(it.name)).join(' · ') + '</div>' +
+        '<div class="pay ' + (cash ? 'cash' : 'paid') + '">' + (cash ? '💵 Collect ' + peso(o.total) + ' cash' : '✅ Already paid') + '</div>' +
+        '<div class="btns"><a class="nav" href="' + nav + '" target="_blank" rel="noopener">🧭 Directions</a>' +
+        '<button class="done" onclick="markDelivered(' + o.id + ',\'' + esc(o.order_number) + '\')">✅ Delivered</button></div></div>';
+    }).join('');
+  }
+
+  async function loadOrders() {
+    if (!token) return;
+    try {
+      const res = await fetch(API_BASE + '/delivery/rider-orders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) });
+      if (res.status === 404) { stopSharing(); say('This link is not valid any more. Ask the admin for a new one.', 'bad'); el('orders').innerHTML = ''; return; }
+      if (!res.ok) throw new Error('server');
+      const data = await res.json();
+      el('who').textContent = 'Hi, ' + data.rider.name + '!';
+      if (prevCount !== null && data.orders.length > prevCount) {
+        if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+        say('📦 New delivery assigned to you!', 'ok');
+      }
+      prevCount = data.orders.length;
+      orders = data.orders;
+      renderOrders(); drawMap();
+    } catch (e) { /* offline: keep showing the last list */ }
+  }
+
+  async function markDelivered(orderId, orderNumber) {
+    if (!confirm('Mark ' + orderNumber + ' as delivered? The customer and the shop will be told right away.')) return;
+    try {
+      const res = await fetch(API_BASE + '/delivery/rider-delivered', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, order_id: orderId }) });
+      if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.detail || 'Could not update'); }
+    } catch (e) { alert('⚠️ ' + e.message); loadOrders(); return; }
+    say('✅ ' + orderNumber + ' marked as delivered. Well done!', 'ok');
+    routeCache = null; prevCount = null;
+    await loadOrders();
+    prevCount = orders.length;
+  }
+
+  initMap();
+  loadOrders();
+  setInterval(loadOrders, 15000);
 </script>
 </body>
 </html>
