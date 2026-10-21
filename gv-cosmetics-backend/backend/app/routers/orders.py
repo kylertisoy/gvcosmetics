@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from .. import models, schemas, auth
 from ..database import get_db
-from .delivery import schedule_geocode
+from .delivery import schedule_geocode, run_auto_assign
 
 router = APIRouter(prefix="/orders", tags=["orders"])
 
@@ -186,8 +186,11 @@ def update_order_status(
 
     db.commit()
     db.refresh(order)
-    if payload.status == "Shipped" and order.dest_lat is None:
-        schedule_geocode(order.id)      # find the delivery address on the map (in the background)
+    if payload.status == "Shipped":
+        if order.dest_lat is None:
+            schedule_geocode(order.id)  # find the delivery address on the map (in the background)
+        run_auto_assign(db)             # give it to an available rider automatically
+        db.refresh(order)
     return order
 
 
@@ -276,15 +279,15 @@ def create_review(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(auth.get_current_user),
 ):
-    """Customer reviews their own order. Allowed once the admin has set it to
-    Shipped ("Delivering") or Delivered. One review per order."""
+    """Customer reviews their own order, once it is Delivered (marked by the rider or the
+    admin). One review per order."""
     order = db.query(models.Order).filter(models.Order.id == order_id).first()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
     if order.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="You can only review your own orders")
-    if order.status not in (models.OrderStatus.Shipped, models.OrderStatus.Delivered):
-        raise HTTPException(status_code=400, detail="You can review an order once it is on its way")
+    if order.status != models.OrderStatus.Delivered:
+        raise HTTPException(status_code=400, detail="You can review an order once it has been delivered")
     if order.review:
         raise HTTPException(status_code=409, detail="You already reviewed this order")
 
