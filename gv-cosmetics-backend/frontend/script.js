@@ -652,6 +652,7 @@ async function doLogin(){
 }
 
 function doLogout(){
+  disposeInlineTracks();
   currentUser=null;cart={};cartFromWishlist={};myOrders=[];activeCat='All';
   authToken=null;localStorage.removeItem('gvci_token');
   document.getElementById('inp-email').value='';
@@ -1466,6 +1467,7 @@ function daysSinceOrder(isoDateStr){
 
 function renderOrders(){
   const body=document.getElementById('orders-body');
+  disposeInlineTracks();                       // the cards are about to be redrawn
   if(!myOrders.length){body.innerHTML=`<div class="empty-state"><div class="empty-icon">📦</div><h3>No orders yet</h3><p>Start shopping to see your orders here!</p><button onclick="cPage('shop',document.getElementById('cnav-shop'))">Shop Now →</button></div>`;return;}
   body.innerHTML=myOrders.map(o=>{
     const isSettled = o.status==='Cancelled' || o.status==='Delivered';
@@ -1507,7 +1509,7 @@ function renderOrders(){
       <div class="oc-track-no">Tracking: <span>${o.tracking}</span></div>
       <div class="tt">${steps.map(s=>`<div class="tt-row"><div class="tt-dot ${s.status}">${s.status==='done'?'✓':s.status==='act'?'→':'○'}</div><div class="tt-body"><div class="tt-lbl">${s.label}</div><div class="tt-sub">${s.sub}</div></div></div>`).join('')}</div>
       ${deliveryHtml}
-      ${(o.status==='Shipped'||o.status==='Delivered')?reviewBlockHtml(o):''}
+      ${o.status==='Delivered'?reviewBlockHtml(o):''}
     </div>`:(deliveryHtml?`<div class="oc-tracking">${deliveryHtml}</div>`:'')
     return`<div class="order-card">
       <div class="oc-head"><span class="oc-id">${o.id}</span><span class="oc-date">${o.date}</span></div>
@@ -1518,13 +1520,19 @@ function renderOrders(){
         <span class="badge ${o.status==='Delivered'?'bg-green':o.status==='Shipped'?'bg-blue':o.status==='Processing'?'bg-amber':o.status==='Cancelled'?'bg-red':'bg-gray'}">${statusLabel(o.status)}</span>
       </div>
       ${o.status==='Processing'&&o.packedAt?`<div class="oc-addr" style="color:#166534;font-weight:600">📦 Packed — your order is ready for delivery</div>`:''}
-      ${o.status==='Shipped'?`<button class="btn-cancel-order" style="width:100%;margin-top:10px;background:none;border:1px solid var(--rose,#C2607E);color:var(--rose,#C2607E)" onclick="openTrackModal(${o.dbId},'${o.id}')">📍 Track my rider</button>`:''}
+      ${o.status==='Shipped'?`<div class="itrack" data-itrack="${o.dbId}">
+        <div class="itrack-title">📍 Where is my order?</div>
+        <div class="itrack-status">Looking for your rider…</div>
+        <div class="itrack-map"></div>
+        <button class="itrack-bigger" onclick="openTrackModal(${o.dbId},'${o.id}')">🔍 Open larger map</button>
+      </div>`:''}
       ${o.status==='Pending'?`<button class="btn-cancel-order" style="width:100%;margin-top:10px" onclick="openCancelModal(${o.dbId})">Cancel Order</button>`:''}
       ${o.status==='Cancelled'&&o.cancelReason?`<div class="oc-addr" style="color:var(--red,#DC2626)">✕ Cancelled: ${o.cancelReason}</div>`:''}
       ${trackHtml}
       ${isSettled&&isOld?`<button class="btn-cancel-order" style="width:100%;margin-top:10px;background:none;border:1px solid var(--muted,#8A8580);color:var(--muted,#8A8580)" onclick="toggleOrderExpand('${o.id}')">▲ Minimize</button>`:''}
     </div>`;
   }).join('');
+  initInlineTracks();                          // live map in every For Delivery card
 }
 
 /* ═══ PROFILE ═══ */
@@ -1819,7 +1827,7 @@ setInterval(async()=>{
   if(!currentUser||currentUser.role!=='admin'||document.hidden) return;
   const panel=document.querySelector('.a-panel.on');
   const name=panel?panel.id.replace('ap-',''):'';
-  const rebuild={dashboard:buildDashboard,analytics:buildAnalytics,packing:buildPacking}[name];
+  const rebuild={dashboard:buildDashboard,analytics:buildAnalytics,packing:buildPacking,orders:buildOrders}[name];
   if(!rebuild) return;                       // other panels have forms/dropdowns, so they aren't redrawn on a timer
   if(await refreshAdminData(name)) rebuild();
 },60000);
@@ -2364,7 +2372,7 @@ async function packingSetForDelivery(orderId){
 const CDO_CENTER=[8.4542,124.6319];
 const DV_COLORS={current:'#F59E0B',pending:'#6B7280',done:'#16A34A',rush:'#DC2626',rider:'#2563EB'};
 let delivMap=null, delivLayer=null, delivBoard=null, delivSig='', delivPinFor=null, delivFitted=false;
-let delivRoutes={}, delivFetching=new Set();
+let delivRoutes={}, delivFetching=new Set(), delivPrevStatus=null;
 
 function haversineKm(a,b){
   const R=6371, rad=x=>x*Math.PI/180;
@@ -2489,7 +2497,7 @@ function renderDeliveryTables(){
     const stopCell=isDone?badge('Delivered',DV_COLORS.done)
       :o.is_rush?badge('Rush'+(s?' · #'+s.seq:''),DV_COLORS.rush)
       :s?badge((s.state==='current'?'Current':'Pending')+' · #'+s.seq,s.state==='current'?DV_COLORS.current:DV_COLORS.pending)
-      :badge('No rider yet',DV_COLORS.pending);
+      :badge('Waiting for a rider',DV_COLORS.pending);
     const riderSel=isDone?'—':`<select style="font-size:12px;border:1px solid #E2E8F0;border-radius:6px;padding:4px 6px" onchange="assignRider(${o.id},this.value)">
         <option value="">— no rider —</option>${b.riders.map(r=>`<option value="${r.id}" ${o.rider_id===r.id?'selected':''}>${escHtml(r.name)}</option>`).join('')}</select>`;
     const rush=isDone?'':`<input type="checkbox" ${o.is_rush?'checked':''} onchange="toggleRush(${o.id},this.checked)" title="Deliver this one first">`;
@@ -2508,8 +2516,10 @@ function renderDeliveryTables(){
     <div class="dv-rider-row">
       <span class="dv-live" style="background:${r.fresh?'#16A34A':r.lat!=null?'#F59E0B':'#CBD5E1'}"></span>
       <b>${escHtml(r.name)}</b>
+      <span style="font-size:12px;color:#475569">${r.phone?'📞 '+escHtml(r.phone):'<span style="color:#DC2626">No phone number</span>'}</span>
       <span style="color:#64748B;font-size:12px">${r.fresh?'Live now':r.lat!=null?'Last seen '+timeAgo(r.updated_at):'Not sharing yet'}</span>
       <span style="flex:1"></span>
+      <button class="btn-edit" onclick="editRiderPhone(${r.id},'${escJS(r.phone||'')}')">✏️ Phone</button>
       <button class="btn-edit" onclick="copyRiderLink('${escJS(r.token)}')">📋 Copy rider link</button>
       <button class="btn-del" onclick="removeRider(${r.id},'${escJS(r.name)}')">Remove</button>
     </div>`).join('')
@@ -2521,6 +2531,16 @@ async function refreshDeliveries(force){
   try { board=await apiFetch('/delivery/board'); }
   catch(e){ const u=document.getElementById('dv-updated'); if(u) u.textContent='⚠️ Could not load deliveries: '+e.message; return; }
   delivBoard=board;
+  // tell the admin the moment a rider marks an order delivered
+  if(delivPrevStatus){
+    board.orders.forEach(o=>{
+      if(o.status==='Delivered'&&delivPrevStatus[o.id]==='Shipped'){
+        const r=board.riders.find(x=>x.id===o.rider_id);
+        showToast('✅ '+o.order_number+' was delivered'+(r?' by '+r.name:'')+'.');
+      }
+    });
+  }
+  delivPrevStatus={}; board.orders.forEach(o=>{ delivPrevStatus[o.id]=o.status; });
   const sig=JSON.stringify([board.orders.map(o=>[o.id,o.status,o.rider_id,o.is_rush,o.lat!=null]),board.riders.map(r=>[r.id,r.name,r.fresh])]);
   if(force||sig!==delivSig){ delivSig=sig; if(document.getElementById('dv-orders')) renderDeliveryTables(); }
   drawDeliveryMap();
@@ -2531,7 +2551,7 @@ async function refreshDeliveries(force){
 async function buildDeliveries(){
   const el=document.getElementById('ap-deliveries');
   el.innerHTML=`<div class="a-title">Deliveries</div>
-    <div style="font-size:13px;color:#64748B;margin:-6px 0 16px">Orders that are <b>For Delivery</b> today. Give each order to a rider. The rider opens their link on a phone and shares their location, and the customer can see it from their order page.</div>
+    <div style="font-size:13px;color:#64748B;margin:-6px 0 16px">Orders that are <b>For Delivery</b> today. Orders are given to an available rider <b>automatically</b> (a rider is available while their phone is sharing its location). You can still change the rider by hand. The customer sees the rider's name, phone number and live location on their order page.</div>
     <div id="dv-kpis" class="kpi-grid"></div>
     <div class="a-card" style="margin-bottom:16px;padding:0;overflow:hidden">
       <div class="dv-map-wrap"><div id="dv-map"></div>
@@ -2546,11 +2566,12 @@ async function buildDeliveries(){
       <div id="dv-riders"></div>
       <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
         <input id="dv-rider-name" placeholder="Rider's name" maxlength="40" style="flex:1;min-width:180px;border:1.5px solid #E2E8F0;border-radius:8px;padding:9px 12px;font-size:13px" onkeydown="if(event.key==='Enter')addRider()">
+        <input id="dv-rider-phone" placeholder="Phone (customers will see it)" maxlength="20" inputmode="tel" style="flex:1;min-width:180px;border:1.5px solid #E2E8F0;border-radius:8px;padding:9px 12px;font-size:13px" onkeydown="if(event.key==='Enter')addRider()">
         <button class="btn-save-inline" onclick="addRider()">+ Add rider</button>
       </div>
     </div>`;
   if(delivMap){ try{ delivMap.remove(); }catch(e){} delivMap=null; delivLayer=null; }
-  delivFitted=false; delivPinFor=null; delivSig=''; delivRoutes={}; delivFetching=new Set();
+  delivFitted=false; delivPinFor=null; delivSig=''; delivRoutes={}; delivFetching=new Set(); delivPrevStatus=null;
   if(typeof L==='undefined'){
     document.getElementById('dv-map').innerHTML='<div style="padding:60px 20px;text-align:center;color:#64748B">The map could not load. Check your internet connection and refresh the page.</div>';
   } else {
@@ -2593,12 +2614,22 @@ async function onDeliveryMapClick(e){
   await deliveryPatch(id,{lat:e.latlng.lat,lng:e.latlng.lng},'📍 Location saved.');
 }
 async function addRider(){
-  const input=document.getElementById('dv-rider-name'), name=input.value.trim();
-  if(!name){ showToast('Enter the rider\'s name first.'); return; }
-  try { await apiFetch('/delivery/riders',{ method:'POST', body: JSON.stringify({ name }) }); }
+  const nameEl=document.getElementById('dv-rider-name'), phoneEl=document.getElementById('dv-rider-phone');
+  const name=nameEl.value.trim(), phone=phoneEl.value.trim();
+  if(!name){ showToast("Enter the rider's name first."); return; }
+  if(!phone){ showToast("Enter the rider's phone number so customers can contact them."); return; }
+  try { await apiFetch('/delivery/riders',{ method:'POST', body: JSON.stringify({ name, phone }) }); }
   catch(e){ showToast('⚠️ '+e.message); return; }
-  input.value='';
+  nameEl.value=''; phoneEl.value='';
   showToast('✅ Rider added. Press "Copy rider link" and send it to them.');
+  refreshDeliveries(true);
+}
+async function editRiderPhone(id,current){
+  const value=prompt("Rider's phone number (customers will see it):",current||'');
+  if(value===null) return;
+  try { await apiFetch('/delivery/riders/'+id,{ method:'PATCH', body: JSON.stringify({ phone: value.trim() }) }); }
+  catch(e){ showToast('⚠️ '+e.message); return; }
+  showToast('✅ Phone number saved.');
   refreshDeliveries(true);
 }
 async function removeRider(id,name){
@@ -2857,8 +2888,8 @@ async function reorderStock(id){
 }
 
 /* ═══ REVIEW ═══
-   Unlocked as soon as the admin sets the order to "For Delivery" (Shipped) and stays
-   available once Delivered. Customer picks stars, writes a comment, optionally adds
+   Unlocked once the order is Delivered (set by the rider or the admin). The customer picks
+   stars, writes a comment, optionally adds
    up to 3 photos, then presses Submit -> POST /orders/:id/review. The backend also
    updates each product's star rating, so we reload orders + products afterwards. */
 const REVIEW_MAX_IMAGES = 3;
@@ -2958,8 +2989,8 @@ function selectReviewStar(oid,n){
 async function submitReview(oid){
   const order=myOrders.find(o=>o.id===oid);
   if(!order)return;
-  if(order.status!=='Shipped'&&order.status!=='Delivered'){
-    showToast('You can review this order once it is on its way.');return;
+  if(order.status!=='Delivered'){
+    showToast('You can review this order once it has been delivered.');return;
   }
   const rating=pendingReviewStars[oid]||0;
   if(rating===0){showToast('Please select a star rating first.');return;}
@@ -2983,10 +3014,47 @@ async function submitReview(oid){
 }
 
 /* ═══ TRACK MY RIDER (customer) ═══
-   Opens from "📍 Track my rider" on an order that is For Delivery. Shows the rider's live
-   position and the customer's address on a map, refreshing every 15 seconds. */
-let trackMap=null, trackLayer=null, trackTimer=null, trackFitted=false;
+   An order that is For Delivery shows a live map right inside its card on My Orders: where the
+   rider is, the customer's address, how far away they are, and the rider's name and phone number.
+   "Open larger map" shows the same thing in a pop-up. Both refresh every 15 seconds, and the
+   card updates by itself when the rider marks the order delivered. */
+let trackMap=null, trackLayer=null, trackTimer=null, trackState={fitted:false};
+let inlineTracks={}, inlineTrackTimer=null;          // order id -> {map, layer, state, statusEl}
 
+/* Draws one tracking result onto a map and writes the plain-language status line above it */
+function renderTrackResult(t,map,layer,statusEl,state){
+  layer.clearLayers();
+  if(!t.active){ statusEl.textContent='This order is no longer out for delivery.'; return; }
+  const pts=[];
+  if(t.dest){
+    L.marker([t.dest.lat,t.dest.lng],{icon:dvIcon('🏠','#C2607E',true)}).addTo(layer).bindTooltip('Your delivery address');
+    pts.push([t.dest.lat,t.dest.lng]);
+  }
+  const r=t.rider;
+  if(r&&r.lat!=null){
+    L.marker([r.lat,r.lng],{icon:dvTruckIcon(),zIndexOffset:1000}).addTo(layer).bindTooltip(escHtml(r.name));
+    pts.push([r.lat,r.lng]);
+  }
+  // the rider's phone number, as a tap-to-call link
+  const call=(r&&r.phone)?' <a class="trk-call" href="tel:'+String(r.phone).replace(/[^0-9+]/g,'')+'">📞 '+escHtml(r.phone)+'</a>':'';
+  if(r&&r.lat!=null){
+    const away=t.dest?haversineKm([r.lat,r.lng],[t.dest.lat,t.dest.lng]):null;
+    const dist=away!=null?' About '+(away<1?Math.round(away*1000)+' m':away.toFixed(1)+' km')+' away in a straight line.':'';
+    statusEl.innerHTML=(r.fresh
+      ?'🚚 <b>'+escHtml(r.name)+'</b> is on the way with your order. Location updated '+timeAgo(r.updated_at)+'.'
+      :'🚚 <b>'+escHtml(r.name)+'</b> has your order. Their location was last updated '+timeAgo(r.updated_at)+', so it may be out of date.')+dist+call;
+  } else if(r){
+    statusEl.innerHTML='🚚 <b>'+escHtml(r.name)+'</b> has your order. Their location will show here once they start sharing it.'+call;
+  } else {
+    statusEl.textContent='Your order is For Delivery. A rider will be assigned shortly, and their name, phone and location will show here.';
+  }
+  if(pts.length&&(!state.fitted||pts.length>1)){
+    if(pts.length===1) map.setView(pts[0],15); else map.fitBounds(pts,{padding:[50,50],maxZoom:16});
+    state.fitted=state.fitted||pts.length>1;
+  }
+}
+
+/* ── pop-up version ── */
 async function openTrackModal(orderDbId,orderNo){
   document.getElementById('track-title').textContent='Track '+orderNo;
   document.getElementById('track-status').textContent='Looking for your rider…';
@@ -3001,7 +3069,7 @@ async function openTrackModal(orderDbId,orderNo){
   trackMap=L.map('track-map').setView(CDO_CENTER,12);
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap contributors'}).addTo(trackMap);
   trackLayer=L.layerGroup().addTo(trackMap);
-  trackFitted=false;
+  trackState={fitted:false};
   setTimeout(()=>{ if(trackMap) trackMap.invalidateSize(); },300);
   await refreshTrack(orderDbId);
   trackTimer=setInterval(()=>refreshTrack(orderDbId),15000);
@@ -3012,36 +3080,55 @@ function closeTrackModal(){
   if(trackMap){ try{ trackMap.remove(); }catch(e){} trackMap=null; trackLayer=null; }
 }
 async function refreshTrack(orderDbId){
+  const statusEl=document.getElementById('track-status');
   let t;
   try { t=await apiFetch('/delivery/track/'+orderDbId); }
-  catch(e){ document.getElementById('track-status').textContent='⚠️ Could not load the rider location: '+e.message; return; }
+  catch(e){ statusEl.textContent='⚠️ Could not load the rider location: '+e.message; return; }
   if(!trackMap||!trackLayer) return;
-  trackLayer.clearLayers();
-  const pts=[], status=document.getElementById('track-status');
-  if(!t.active){
-    status.textContent='This order is no longer out for delivery.';
-    return;
-  }
-  if(t.dest){
-    L.marker([t.dest.lat,t.dest.lng],{icon:dvIcon('🏠','#C2607E',true)}).addTo(trackLayer).bindTooltip('Your delivery address');
-    pts.push([t.dest.lat,t.dest.lng]);
-  }
-  const r=t.rider;
-  if(r&&r.lat!=null){
-    L.marker([r.lat,r.lng],{icon:dvTruckIcon(),zIndexOffset:1000}).addTo(trackLayer).bindTooltip(escHtml(r.name));
-    pts.push([r.lat,r.lng]);
-    const away=t.dest?haversineKm([r.lat,r.lng],[t.dest.lat,t.dest.lng]):null;
-    const dist=away!=null?' About '+(away<1?Math.round(away*1000)+' m':away.toFixed(1)+' km')+' away in a straight line.':'';
-    status.textContent=r.fresh?'🚚 '+r.name+' is on the way with your order. Location updated '+timeAgo(r.updated_at)+'.'+dist
-      :'🚚 '+r.name+' has your order. Their location was last updated '+timeAgo(r.updated_at)+', so it may be out of date.'+dist;
-  } else if(r){
-    status.textContent='🚚 '+r.name+' has your order. Their location will show here once they start sharing it.';
-  } else {
-    status.textContent='Your order is For Delivery. A rider will be assigned shortly, and their location will show here.';
-  }
-  if(pts.length&&(!trackFitted||pts.length>1)){
-    if(pts.length===1) trackMap.setView(pts[0],15); else trackMap.fitBounds(pts,{padding:[50,50],maxZoom:16});
-    trackFitted=pts.length>1||trackFitted;
+  renderTrackResult(t,trackMap,trackLayer,statusEl,trackState);
+}
+
+/* ── map inside the order card ── */
+function disposeInlineTracks(){
+  clearInterval(inlineTrackTimer); inlineTrackTimer=null;
+  Object.values(inlineTracks).forEach(x=>{ try{ x.map.remove(); }catch(e){} });
+  inlineTracks={};
+}
+/* Called after the order list is drawn: gives every For Delivery order card its own live map */
+function initInlineTracks(){
+  disposeInlineTracks();
+  if(typeof L==='undefined') return;
+  const page=document.getElementById('cpage-orders');
+  if(!page||!page.classList.contains('active')) return;          // only while My Orders is on screen
+  const boxes=[...document.querySelectorAll('[data-itrack]')];
+  if(!boxes.length) return;
+  boxes.forEach(box=>{
+    const id=box.getAttribute('data-itrack');
+    const mobile=!!(L.Browser&&L.Browser.mobile);
+    // scroll-wheel zoom off, and one-finger drag off on phones, so the map never traps page scrolling
+    const map=L.map(box.querySelector('.itrack-map'),{scrollWheelZoom:false,dragging:!mobile}).setView(CDO_CENTER,12);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap contributors'}).addTo(map);
+    inlineTracks[id]={map,layer:L.layerGroup().addTo(map),state:{fitted:false},statusEl:box.querySelector('.itrack-status')};
+    setTimeout(()=>{ try{ map.invalidateSize(); }catch(e){} },250);
+  });
+  refreshInlineTracks();
+  inlineTrackTimer=setInterval(refreshInlineTracks,15000);
+}
+async function refreshInlineTracks(){
+  if(!currentUser||document.hidden) return;
+  const page=document.getElementById('cpage-orders');
+  if(!page||!page.classList.contains('active')) return;
+  for(const id of Object.keys(inlineTracks)){
+    const x=inlineTracks[id]; if(!x) continue;
+    let t;
+    try { t=await apiFetch('/delivery/track/'+id); }
+    catch(e){ x.statusEl.textContent='⚠️ Could not load the rider location right now.'; continue; }
+    if(!inlineTracks[id]) continue;                              // the card was redrawn while waiting
+    renderTrackResult(t,x.map,x.layer,x.statusEl,x.state);
+    if(!t.active){                                               // delivered: refresh the list so the card updates by itself
+      loadOrders().then(()=>renderOrders()).catch(()=>{});
+      return;
+    }
   }
 }
 
