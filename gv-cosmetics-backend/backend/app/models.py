@@ -243,6 +243,7 @@ class Rider(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)
     token = Column(String, unique=True, nullable=False, index=True)
+    phone = Column(String, nullable=True)             # shown to customers whose order this rider is carrying
     lat = Column(Float, nullable=True)
     lng = Column(Float, nullable=True)
     updated_at = Column(DateTime, nullable=True)       # when the last position arrived (UTC)
