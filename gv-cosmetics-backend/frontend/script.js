@@ -1348,7 +1348,7 @@ async function placeOrder(grand){
   try {
     order = await apiFetch('/orders', {
       method: 'POST',
-      body: JSON.stringify({ items, shipping_name: (fn+' '+ln).trim(), shipping_address: addrFull })
+      body: JSON.stringify({ items, shipping_name: (fn+' '+ln).trim(), shipping_address: addrFull, shipping_phone: ph })
     });
   } catch(e) {
     // Order was never created — cart is untouched, customer just stays on checkout.
@@ -2517,9 +2517,11 @@ function renderDeliveryTables(){
       <span class="dv-live" style="background:${r.fresh?'#16A34A':r.lat!=null?'#F59E0B':'#CBD5E1'}"></span>
       <b>${escHtml(r.name)}</b>
       <span style="font-size:12px;color:#475569">${r.phone?'📞 '+escHtml(r.phone):'<span style="color:#DC2626">No phone number</span>'}</span>
+      <span style="font-size:12px;color:#475569">${r.email?'✉️ '+escHtml(r.email):'<span style="color:#94A3B8">No email (no automatic link)</span>'}</span>
       <span style="color:#64748B;font-size:12px">${r.fresh?'Live now':r.lat!=null?'Last seen '+timeAgo(r.updated_at):'Not sharing yet'}</span>
       <span style="flex:1"></span>
       <button class="btn-edit" onclick="editRiderPhone(${r.id},'${escJS(r.phone||'')}')">✏️ Phone</button>
+      <button class="btn-edit" onclick="editRiderEmail(${r.id},'${escJS(r.email||'')}')">✏️ Email</button>
       <button class="btn-edit" onclick="copyRiderLink('${escJS(r.token)}')">📋 Copy rider link</button>
       <button class="btn-del" onclick="removeRider(${r.id},'${escJS(r.name)}')">Remove</button>
     </div>`).join('')
@@ -2550,6 +2552,8 @@ async function refreshDeliveries(force){
 
 async function buildDeliveries(){
   const el=document.getElementById('ap-deliveries');
+  // Tell the server the website's address, so the rider's page link in emails points to the right place
+  if(/^https?:/.test(location.origin)) apiFetch('/delivery/site-url',{ method:'PUT', body: JSON.stringify({ url: location.origin }) }).catch(()=>{});
   el.innerHTML=`<div class="a-title">Deliveries</div>
     <div style="font-size:13px;color:#64748B;margin:-6px 0 16px">Orders that are <b>For Delivery</b> today. Orders are given to an available rider <b>automatically</b> (a rider is available while their phone is sharing its location). You can still change the rider by hand. The customer sees the rider's name, phone number and live location on their order page.</div>
     <div id="dv-kpis" class="kpi-grid"></div>
@@ -2567,6 +2571,7 @@ async function buildDeliveries(){
       <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
         <input id="dv-rider-name" placeholder="Rider's name" maxlength="40" style="flex:1;min-width:180px;border:1.5px solid #E2E8F0;border-radius:8px;padding:9px 12px;font-size:13px" onkeydown="if(event.key==='Enter')addRider()">
         <input id="dv-rider-phone" placeholder="Phone (customers will see it)" maxlength="20" inputmode="tel" style="flex:1;min-width:180px;border:1.5px solid #E2E8F0;border-radius:8px;padding:9px 12px;font-size:13px" onkeydown="if(event.key==='Enter')addRider()">
+        <input id="dv-rider-email" type="email" placeholder="Email (optional: their page link is sent here)" maxlength="120" style="flex:1;min-width:220px;border:1.5px solid #E2E8F0;border-radius:8px;padding:9px 12px;font-size:13px" onkeydown="if(event.key==='Enter')addRider()">
         <button class="btn-save-inline" onclick="addRider()">+ Add rider</button>
       </div>
     </div>`;
@@ -2613,15 +2618,27 @@ async function onDeliveryMapClick(e){
   delivMap.getContainer().style.cursor='';
   await deliveryPatch(id,{lat:e.latlng.lat,lng:e.latlng.lng},'📍 Location saved.');
 }
+const RIDER_EMAIL_RE=/^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 async function addRider(){
-  const nameEl=document.getElementById('dv-rider-name'), phoneEl=document.getElementById('dv-rider-phone');
-  const name=nameEl.value.trim(), phone=phoneEl.value.trim();
+  const nameEl=document.getElementById('dv-rider-name'), phoneEl=document.getElementById('dv-rider-phone'), emailEl=document.getElementById('dv-rider-email');
+  const name=nameEl.value.trim(), phone=phoneEl.value.trim(), email=emailEl.value.trim().toLowerCase();
   if(!name){ showToast("Enter the rider's name first."); return; }
   if(!phone){ showToast("Enter the rider's phone number so customers can contact them."); return; }
-  try { await apiFetch('/delivery/riders',{ method:'POST', body: JSON.stringify({ name, phone }) }); }
+  if(email&&!RIDER_EMAIL_RE.test(email)){ showToast('That email address does not look right.'); return; }
+  try { await apiFetch('/delivery/riders',{ method:'POST', body: JSON.stringify({ name, phone, email }) }); }
   catch(e){ showToast('⚠️ '+e.message); return; }
-  nameEl.value=''; phoneEl.value='';
-  showToast('✅ Rider added. Press "Copy rider link" and send it to them.');
+  nameEl.value=''; phoneEl.value=''; emailEl.value='';
+  showToast(email?'✅ Rider added. Their page link is emailed to them whenever they get a delivery.':'✅ Rider added. Press "Copy rider link" and send it to them.');
+  refreshDeliveries(true);
+}
+async function editRiderEmail(id,current){
+  const value=prompt("Rider's email (their page link is sent here when they get a delivery). Leave empty to remove it:",current||'');
+  if(value===null) return;
+  const email=value.trim().toLowerCase();
+  if(email&&!RIDER_EMAIL_RE.test(email)){ showToast('That email address does not look right.'); return; }
+  try { await apiFetch('/delivery/riders/'+id,{ method:'PATCH', body: JSON.stringify({ email }) }); }
+  catch(e){ showToast('⚠️ '+e.message); return; }
+  showToast(email?'✅ Email saved.':'Email removed.');
   refreshDeliveries(true);
 }
 async function editRiderPhone(id,current){
