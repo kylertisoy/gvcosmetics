@@ -21,6 +21,11 @@ Automatic assignment
   fewest orders (nearest on a tie). The customer is notified with the rider's name and phone.
   The admin can still change a rider by hand on the Deliveries screen.
 
+Emails (sent in the background, see notify.py)
+  * the customer: "your order is on its way" with the rider's name and phone;
+  * the rider, if an email was saved for them: their personal page link and the orders
+    they were just given. The rider's page also shows each customer's mobile number.
+
 How it works
   * The rider opens their personal link (frontend/rider.html?t=TOKEN) on a phone and taps
     "Start sharing". The phone sends its position every few seconds.
@@ -49,7 +54,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from .. import models, auth
+from .. import models, auth, notify
 from ..database import get_db, SessionLocal
 
 router = APIRouter(prefix="/delivery", tags=["delivery"])
@@ -63,11 +68,17 @@ LAT_MIN, LAT_MAX, LNG_MIN, LNG_MAX = 4.0, 22.0, 116.0, 128.0
 class RiderIn(BaseModel):
     name: str
     phone: Optional[str] = None
+    email: Optional[str] = None
 
 
 class RiderUpdate(BaseModel):
     name: Optional[str] = None
     phone: Optional[str] = None
+    email: Optional[str] = None
+
+
+class SiteUrlIn(BaseModel):
+    url: str
 
 
 class RiderToken(BaseModel):
@@ -129,6 +140,29 @@ def clean_phone(value):
     return phone
 
 
+def clean_email(value):
+    """A tidy email address, None if empty; raises 400 if it doesn't look like one."""
+    email = (value or "").strip().lower()
+    if not email:
+        return None
+    if len(email) > 120 or not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+        raise HTTPException(400, "Enter a valid email address.")
+    return email
+
+
+def _customer_phone(order):
+    """The customer's mobile number for the rider: the one typed at checkout, otherwise the phone on
+    their default (or first) saved address, so older orders still have a number."""
+    if getattr(order, "shipping_phone", None):
+        return order.shipping_phone
+    user = getattr(order, "user", None)
+    addresses = list(getattr(user, "addresses", None) or [])
+    for a in addresses:
+        if getattr(a, "is_default", False) and a.phone:
+            return a.phone
+    return next((a.phone for a in addresses if a.phone), None)
+
+
 def haversine_km(lat1, lng1, lat2, lng2) -> float:
     rad = math.radians
     h = math.sin(rad(lat2 - lat1) / 2) ** 2 + math.cos(rad(lat1)) * math.cos(rad(lat2)) * math.sin(rad(lng2 - lng1) / 2) ** 2
@@ -142,9 +176,38 @@ def _max_orders_per_rider() -> int:
         return 5
 
 
-def auto_assign_orders(db) -> int:
+def _assign_notice(db, order, rider) -> None:
+    """The in-app (bell) notice to the customer that a rider has their order."""
+    phone = f" You can reach them at {rider.phone}." if rider.phone else ""
+    db.add(models.Notification(
+        user_id=order.user_id,
+        title="Rider on the way",
+        message=f"Your order {order.order_number} is with rider {rider.name}.{phone} Track them from My Orders.",
+        type="shipped",
+    ))
+
+
+def _send_assignment_emails(db, pairs) -> None:
+    """After orders were given to riders: email each customer, and email each rider (once, with
+    all the orders they just got) their personal page link."""
+    if not pairs:
+        return
+    site = notify.site_url(db)
+    by_rider = {}
+    for order, rider in pairs:
+        notify.email_customer(order, "rider", rider=rider, site=site)
+        by_rider.setdefault(rider.id, (rider, []))[1].append(order)
+    for rider, orders in by_rider.values():
+        link = f"{site}/rider.html?t={rider.token}" if site else ""
+        if rider.email and not link:
+            print(f"[notify] cannot add the rider page link for {rider.name}: the website address is unknown "
+                  f"(set SITE_URL on Render, or open the Deliveries screen once)")
+        notify.email_rider(rider, orders, link)
+
+
+def auto_assign_orders(db, assigned_out=None) -> int:
     """Hands out waiting For Delivery orders to available riders. Returns how many were assigned.
-    The caller commits."""
+    The caller commits. (order, rider) pairs are appended to assigned_out, for the emails."""
     now = datetime.utcnow()
     live = [r for r in db.query(models.Rider).all() if _is_fresh(r, now)]
     if not live:
@@ -173,22 +236,20 @@ def auto_assign_orders(db) -> int:
         order.rider_id = rider.id
         load[rider.id] += 1
         assigned += 1
-        phone = f" You can reach them at {rider.phone}." if rider.phone else ""
-        db.add(models.Notification(
-            user_id=order.user_id,
-            title="Rider on the way",
-            message=f"Your order {order.order_number} is with rider {rider.name}.{phone} Track them from My Orders.",
-            type="shipped",
-        ))
+        _assign_notice(db, order, rider)
+        if assigned_out is not None:
+            assigned_out.append((order, rider))
     return assigned
 
 
 def run_auto_assign(db) -> int:
-    """auto_assign_orders + commit, and never lets a problem here break the caller."""
+    """auto_assign_orders + commit + emails, and never lets a problem here break the caller."""
     try:
-        n = auto_assign_orders(db)
+        pairs = []
+        n = auto_assign_orders(db, pairs)
         if n:
             db.commit()
+            _send_assignment_emails(db, pairs)
         return n
     except Exception as e:
         print(f"[delivery] automatic assignment failed: {e}")
@@ -322,7 +383,7 @@ def delivery_board(
     return {
         "orders": [_order_row(o) for o in out_for_delivery + delivered_today],
         "riders": [
-            {"id": r.id, "token": r.token, **_rider_public(r, now)}
+            {"id": r.id, "token": r.token, "email": r.email, **_rider_public(r, now)}
             for r in riders
         ],
     }
@@ -337,11 +398,12 @@ def add_rider(
     name = (payload.name or "").strip()
     if not name or len(name) > 40:
         raise HTTPException(400, "Enter the rider's name (up to 40 characters).")
-    rider = models.Rider(name=name, phone=clean_phone(payload.phone), token=secrets.token_urlsafe(16))
+    rider = models.Rider(name=name, phone=clean_phone(payload.phone), email=clean_email(payload.email),
+                         token=secrets.token_urlsafe(16))
     db.add(rider)
     db.commit()
     db.refresh(rider)
-    return {"id": rider.id, "token": rider.token, **_rider_public(rider, datetime.utcnow())}
+    return {"id": rider.id, "token": rider.token, "email": rider.email, **_rider_public(rider, datetime.utcnow())}
 
 
 @router.patch("/riders/{rider_id}")
@@ -361,8 +423,10 @@ def update_rider(
         rider.name = name
     if payload.phone is not None:
         rider.phone = clean_phone(payload.phone)       # an empty value clears it
+    if payload.email is not None:
+        rider.email = clean_email(payload.email)       # an empty value clears it
     db.commit()
-    return {"id": rider.id, **_rider_public(rider, datetime.utcnow())}
+    return {"id": rider.id, "email": rider.email, **_rider_public(rider, datetime.utcnow())}
 
 
 @router.delete("/riders/{rider_id}")
@@ -391,6 +455,7 @@ def update_order_delivery(
     order = db.query(models.Order).filter(models.Order.id == order_id).first()
     if not order:
         raise HTTPException(404, "Order not found")
+    assigned_pair = None
 
     if payload.clear_rider:
         order.rider_id = None
@@ -400,7 +465,11 @@ def update_order_delivery(
         rider = db.query(models.Rider).filter(models.Rider.id == payload.rider_id).first()
         if not rider:
             raise HTTPException(404, "Rider not found")
+        newly_assigned = order.rider_id != rider.id
         order.rider_id = rider.id
+        if newly_assigned:
+            _assign_notice(db, order, rider)
+            assigned_pair = (order, rider)
 
     if payload.is_rush is not None:
         order.is_rush = payload.is_rush
@@ -411,7 +480,25 @@ def update_order_delivery(
         order.dest_lat, order.dest_lng = payload.lat, payload.lng
 
     db.commit()
+    if assigned_pair:
+        _send_assignment_emails(db, [assigned_pair])     # the customer and the rider are told
     return _order_row(order)
+
+
+@router.put("/site-url")
+def save_site_url(
+    payload: SiteUrlIn,
+    db: Session = Depends(get_db),
+    admin: models.User = Depends(auth.get_current_admin),
+):
+    """The admin's browser tells the server the website's address (used for the rider's page link
+    in emails). Called automatically when the Deliveries screen opens."""
+    url = (payload.url or "").strip().rstrip("/")
+    if not re.fullmatch(r"https?://[^\s/]+(/[^\s]*)?", url) or len(url) > 200:
+        raise HTTPException(400, "That is not a valid website address.")
+    notify.save_site_url(db, url)
+    db.commit()
+    return {"url": url}
 
 
 # ───────────── rider ─────────────
@@ -461,6 +548,7 @@ def rider_orders(payload: RiderToken, db: Session = Depends(get_db)):
                 "total": o.total,
                 "payment_method": o.payment_method,
                 "payment_status": o.payment_status,
+                "phone": _customer_phone(o),
                 "items": [{"name": i.product_name, "qty": i.quantity} for i in o.items],
             }
             for o in mine
@@ -490,6 +578,7 @@ def rider_delivered(payload: RiderDelivered, db: Session = Depends(get_db)):
         type="delivered",
     ))
     db.commit()
+    notify.email_customer(order, "delivered", site=notify.site_url(db))
     run_auto_assign(db)                      # this rider has room again: hand out any waiting orders
     return {"ok": True, "order_number": order.order_number}
 
