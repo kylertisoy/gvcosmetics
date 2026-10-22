@@ -34,7 +34,8 @@
   .pay.cash{color:#b45309} .pay.paid{color:#15803d}
   .btns{display:flex;gap:8px;margin-top:8px}
   .btns a,.btns button{flex:1;text-align:center;padding:13px 8px;font-size:14px;border-radius:10px;text-decoration:none;font-weight:700}
-  .nav{background:#2563eb;color:#fff} .done{background:#16a34a;color:#fff}
+  .nav{background:#2563eb;color:#fff} .done{background:#16a34a;color:#fff} .call{background:#0ea5e9;color:#fff;display:block;text-align:center;padding:13px 8px;font-size:15px;border-radius:10px;text-decoration:none;font-weight:700;margin-top:8px}
+  .phone{font-size:14px;margin:6px 0} .phone a{color:#0369a1;font-weight:700;text-decoration:none} .phone.none{color:#b45309;font-size:12.5px}
   .empty{text-align:center;color:#6b7280;font-size:14px;padding:14px 4px;line-height:1.6}
   .hint{margin:4px 2px 0;font-size:12px;color:#d6d3cd;line-height:1.7}
   .dot{border-radius:50%;color:#fff;font:700 13px/26px system-ui,sans-serif;text-align:center;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.35)}
@@ -232,9 +233,12 @@
         '<div class="row1"><div class="num' + (o.is_rush ? ' rush' : i === 0 ? ' cur' : '') + '">' + (located ? i + 1 : '?') + '</div>' +
         '<span class="ono">' + esc(o.order_number) + '</span>' + (o.is_rush ? '<span class="tag">RUSH</span>' : '') + '</div>' +
         '<div class="cust">' + esc(o.customer) + '</div><div class="addr">📍 ' + esc(o.address) + '</div>' +
+        (o.phone ? '<div class="phone">📞 <a href="tel:' + String(o.phone).replace(/[^0-9+]/g, '') + '">' + esc(o.phone) + '</a></div>'
+                 : '<div class="phone none">No phone number for this order.</div>') +
         (located ? '' : '<div class="addr" style="color:#b45309">Map pin not set yet. Use the address below.</div>') +
         '<div class="items">' + o.items.map(it => it.qty + ' × ' + esc(it.name)).join(' · ') + '</div>' +
         '<div class="pay ' + (cash ? 'cash' : 'paid') + '">' + (cash ? '💵 Collect ' + peso(o.total) + ' cash' : '✅ Already paid') + '</div>' +
+        (o.phone ? '<a class="call" href="tel:' + String(o.phone).replace(/[^0-9+]/g, '') + '">📞 Call customer (tell them you have arrived)</a>' : '') +
         '<div class="btns"><a class="nav" href="' + nav + '" target="_blank" rel="noopener">🧭 Directions</a>' +
         '<button class="done" onclick="markDelivered(' + o.id + ',\'' + esc(o.order_number) + '\')">✅ Delivered</button></div></div>';
     }).join('');
