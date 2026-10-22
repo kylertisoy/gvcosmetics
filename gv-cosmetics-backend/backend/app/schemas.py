@@ -144,6 +144,7 @@ class OrderCreate(BaseModel):
     items: List[OrderItemIn]
     shipping_name: str
     shipping_address: str
+    shipping_phone: Optional[str] = None   # customer's mobile number, so the rider can call
     payment_method: str = "cod"  # 'cod' | 'gcash' | 'card' | 'maya'
 
 
