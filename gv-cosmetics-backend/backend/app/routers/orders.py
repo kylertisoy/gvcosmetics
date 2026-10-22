@@ -1,5 +1,6 @@
 import json
 import random
+import re
 import string
 from datetime import date, datetime, timedelta, timezone
 from typing import List, Optional
@@ -7,7 +8,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from .. import models, schemas, auth
+from .. import models, schemas, auth, notify
 from ..database import get_db
 from .delivery import schedule_geocode, run_auto_assign
 
@@ -37,6 +38,13 @@ def _effective_price(product) -> float:
 
 # What customers read in notifications (the stored status value stays "Shipped")
 STATUS_LABELS = {"Shipped": "For Delivery"}
+
+
+def _clean_phone(value):
+    """The customer's mobile number as typed at checkout, or None if it doesn't look like a number
+    (a bad number never blocks an order)."""
+    phone = (value or "").strip()
+    return phone if re.fullmatch(r"[0-9+()\-\s]{7,20}", phone) else None
 
 
 def _gen_order_number(db: Session) -> str:
@@ -100,6 +108,7 @@ def create_order(
         status=models.OrderStatus.Pending,
         shipping_name=payload.shipping_name,
         shipping_address=payload.shipping_address,
+        shipping_phone=_clean_phone(getattr(payload, "shipping_phone", None)),
         tracking_number=_gen_tracking(),
         items=order_items,
         payment_method=payment_method,
@@ -124,6 +133,7 @@ def create_order(
 
     db.commit()
     db.refresh(order)
+    notify.email_customer(order, "placed", site=notify.site_url(db))    # "we received your order"
     return order
 
 
@@ -168,6 +178,7 @@ def update_order_status(
     if payload.status not in valid_statuses:
         raise HTTPException(status_code=400, detail=f"Status must be one of {valid_statuses}")
 
+    previous = order.status
     order.status = models.OrderStatus(payload.status)
     if payload.status == "Delivered":
         order.delivered_at = datetime.utcnow()      # used by the Deliveries map ("delivered today")
@@ -186,11 +197,19 @@ def update_order_status(
 
     db.commit()
     db.refresh(order)
+    changed = previous != order.status
+    site = notify.site_url(db)
     if payload.status == "Shipped":
         if order.dest_lat is None:
             schedule_geocode(order.id)  # find the delivery address on the map (in the background)
-        run_auto_assign(db)             # give it to an available rider automatically
+        run_auto_assign(db)             # give it to an available rider automatically (and email them)
         db.refresh(order)
+        if changed and order.rider_id is None:
+            # no rider yet; the "on its way" email follows as soon as one is assigned
+            notify.email_customer(order, "for_delivery", site=site)
+    elif changed and payload.status in ("Processing", "Delivered", "Cancelled"):
+        event = {"Processing": "processing", "Delivered": "delivered", "Cancelled": "cancelled"}[payload.status]
+        notify.email_customer(order, event, reason=order.cancel_reason, site=site)
     return order
 
 
@@ -221,6 +240,7 @@ def mark_order_packed(
     )
     db.commit()
     db.refresh(order)
+    notify.email_customer(order, "packed", site=notify.site_url(db))
     return order
 
 
@@ -263,6 +283,7 @@ def cancel_order(
 
     db.commit()
     db.refresh(order)
+    notify.email_customer(order, "cancelled", reason=order.cancel_reason, site=notify.site_url(db))
     return order
 
 
