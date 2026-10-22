@@ -121,6 +121,7 @@ class Order(Base):
     dest_lng = Column(Float, nullable=True)
     is_rush = Column(Boolean, default=False)
     delivered_at = Column(DateTime, nullable=True)
+    shipping_phone = Column(String, nullable=True)         # customer's mobile number, shown to the rider
 
     user = relationship("User", back_populates="orders")
     items = relationship("OrderItem", back_populates="order", cascade="all, delete-orphan")
@@ -244,6 +245,7 @@ class Rider(Base):
     name = Column(String, nullable=False)
     token = Column(String, unique=True, nullable=False, index=True)
     phone = Column(String, nullable=True)             # shown to customers whose order this rider is carrying
+    email = Column(String, nullable=True)             # the rider's page link is emailed here when they get a delivery
     lat = Column(Float, nullable=True)
     lng = Column(Float, nullable=True)
     updated_at = Column(DateTime, nullable=True)       # when the last position arrived (UTC)
