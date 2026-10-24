@@ -64,12 +64,49 @@ function mapProduct(p) {
 }
 
 /* ═══ SALE / BEST SELLER / NEW ARRIVAL (set by the admin on the Products page) ═══
-   - Best Sellers and New Arrivals come from each product's label (p.badge: 'hot' | 'new').
+   - New Arrivals come from each product's label (p.badge: 'new'), set by the admin.
+   - Best Sellers are automatic: the server ranks the Top 10 from real sales and review stars.
    - A product is ON SALE when the admin has set a sale price below its regular price.
      The same rule runs on the server (orders.py), so the price shown is the price charged. */
 function saleActive(p){ return p.salePrice!=null && p.salePrice>0 && p.salePrice<p.price; }
 function effPrice(p){ return saleActive(p) ? p.salePrice : p.price; }
 function salePct(p){ return saleActive(p) ? Math.round((1-p.salePrice/p.price)*100) : 0; }
+/* ═══ BEST SELLERS (automatic Top 10) ═══
+   Worked out by the server from units sold in the last 30 days and customers' review stars,
+   so the admin and every customer see the same list. Nothing is set by hand. */
+let bestSellerRank={}, bestSellerIds=[], BEST_ADMIN=[], bestSellerMeta=null;
+async function loadBestSellers(){            // customers
+  try {
+    const d=await apiFetch('/bestsellers');
+    bestSellerIds=d.items.map(i=>i.product_id);
+    bestSellerRank={}; d.items.forEach(i=>{ bestSellerRank[i.product_id]=i.rank; });
+  } catch(e){ console.warn('Best sellers not loaded:',e.message); }     // quiet: the shop works without it
+}
+async function loadAdminBestSellers(){       // admin: same ranking plus units sold and the score
+  try {
+    const d=await apiFetch('/bestsellers/admin');
+    BEST_ADMIN=d.items;
+    bestSellerMeta={window_days:d.window_days,updated_at:d.updated_at,top_n:d.top_n,weights:d.weights};
+    bestSellerIds=d.items.map(i=>i.product_id);
+    bestSellerRank={}; d.items.forEach(i=>{ bestSellerRank[i.product_id]=i.rank; });
+  } catch(e){ console.warn('Best sellers not loaded:',e.message); }
+}
+const isBestSeller=p=>bestSellerRank[p.id]!=null;
+const bestSellerBadge=p=>'<span class="p-badge">🔥 Best Seller #'+bestSellerRank[p.id]+'</span>';
+/* Customers: re-check the ranking every 5 minutes and redraw what is on screen */
+setInterval(async()=>{
+  if(!currentUser||currentUser.role!=='customer'||document.hidden) return;
+  await loadBestSellers();
+  const onShop=document.getElementById('cpage-shop')?.classList.contains('active');
+  if(!onShop) return;
+  const title=(document.getElementById('section-title')||{}).textContent||'';
+  if(title.startsWith('🔥')) filterBadge('hot');
+  else if(!/^(✨|⚡)/.test(title)) renderProducts();
+},300000);
+function bestSellerProducts(){               // the Top 10 as products, in rank order
+  return bestSellerIds.map(id=>PRODUCTS.find(p=>p.id===id)).filter(Boolean);
+}
+
 function priceHtml(p){
   return saleActive(p) ? '<span class="p-old">'+fmtPeso(p.price)+'</span> '+fmtPeso(p.salePrice) : fmtPeso(p.price);
 }
@@ -642,11 +679,11 @@ async function doLogin(){
     document.getElementById('c-avatar').textContent=acc.initials;
     document.getElementById('prof-avatar-big').textContent=acc.initials;
     document.getElementById('c-username').textContent=acc.name.split(' ')[0];
-    await loadAllData([['products',loadProducts], ['wishlist',loadWishlist], ['orders',loadOrders], ['addresses',loadAddresses], ['notifications',loadNotifications]]);
+    await loadAllData([['products',loadProducts], ['wishlist',loadWishlist], ['orders',loadOrders], ['addresses',loadAddresses], ['notifications',loadNotifications], ['bestsellers',loadBestSellers]]);
     loadCartFromStorage();updatePill();buildShop();renderAddrList();buildRecommendations();updateWishlistBadge();updateNotifBell();renderWishlist();
   } else {
     document.getElementById('screen-admin').classList.remove('hidden');
-    await loadAllData([['products',loadProducts], ['orders',loadOrders], ['customers',loadCustomers]]);
+    await loadAllData([['products',loadProducts], ['orders',loadOrders], ['customers',loadCustomers], ['bestsellers',loadAdminBestSellers]]);
     buildAdminAll();
   }
 }
@@ -794,7 +831,7 @@ function renderProducts(){
   if(!list.length){grid.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:64px;color:var(--muted)"><div style="font-size:44px;margin-bottom:12px">🔍</div><p>No products found.</p></div>';return;}
   grid.innerHTML=list.map(p=>{
     const isLow=p.stock<30&&p.stock>0;
-    const badge=saleActive(p)?'<span class="p-badge" style="background:#D4A853">⚡ Sale −'+salePct(p)+'%</span>':p.badge==='hot'?'<span class="p-badge">🔥 Hot</span>':p.badge==='new'?'<span class="p-badge new">✨ New</span>':'';
+    const badge=saleActive(p)?'<span class="p-badge" style="background:#D4A853">⚡ Sale −'+salePct(p)+'%</span>':isBestSeller(p)?bestSellerBadge(p):p.badge==='new'?'<span class="p-badge new">✨ New</span>':'';
     const inWL=wishlist.includes(p.id);
     const r=productRatings[p.id];
     const starsHtml=r?[1,2,3,4,5].map(i=>`<span class="s${i<=Math.round(parseFloat(r.avg))?' on':''}" onclick="event.stopPropagation();rateProduct(${p.id},${i})">${i<=Math.round(parseFloat(r.avg))?'★':'☆'}</span>`).join('')+'<span class="p-rating-txt">('+r.count+')</span>':'';
@@ -1082,7 +1119,7 @@ function buildRecommendations(){
     });
     reco=PRODUCTS.filter(p=>!isExpired(p)&&orderedCats.has(p.cat)&&!Object.keys(cart).map(Number).includes(p.id)).slice(0,8);
   }
-  if(reco.length<4)reco=PRODUCTS.filter(p=>!isExpired(p)&&(p.badge==='hot'||p.badge==='new')).slice(0,8);
+  if(reco.length<4)reco=PRODUCTS.filter(p=>!isExpired(p)&&(isBestSeller(p)||p.badge==='new')).slice(0,8);
   if(!reco.length){wrap.style.display='none';return;}
   wrap.style.display='block';
   document.getElementById('reco-strip').innerHTML=reco.map(p=>`
@@ -1809,14 +1846,31 @@ function onDbWeekChange(){
 /* Keeps the admin charts current: a cheap fingerprint of the loaded data, so the
    screen only rebuilds when something actually changed (new order, status change...) */
 let lastAdminSig='';
+/* Dashboard card: the automatic Top 10 */
+function bestSellersCardHtml(){
+  const meta=bestSellerMeta||{window_days:30,top_n:10,weights:{sales:0.7,rating:0.3}};
+  const w=meta.weights||{sales:0.7,rating:0.3};
+  const rows=BEST_ADMIN.map(b=>`<tr>
+      <td style="font-weight:700">#${b.rank}</td>
+      <td style="font-weight:500">${escHtml(b.name)}</td>
+      <td>${b.units}</td>
+      <td>${b.rating_count?'<span style="color:#F59E0B">★</span> '+Number(b.avg_rating).toFixed(1)+' <span style="color:#94A3B8">('+b.rating_count+' review'+(b.rating_count===1?'':'s')+')</span>':'<span style="color:#94A3B8">No reviews yet</span>'}</td>
+      <td>${Math.round(b.score*100)}</td></tr>`).join('');
+  return `<div class="tbl-wrap" style="margin-bottom:18px"><div class="tbl-head"><h3>🔥 Best Sellers · Top ${meta.top_n||10} (automatic)</h3></div>
+    <div style="padding:2px 18px 12px;font-size:12px;color:#64748B;line-height:1.6">Ranked by units sold in the last ${meta.window_days} days (${Math.round(w.sales*100)}% of the score) and the stars customers give in their reviews (${Math.round(w.rating*100)}%). It updates by itself as customers buy and review. Cancelled orders and expired products are left out. Customers see this same list in the shop.</div>
+    <table class="a-table"><thead><tr><th>Rank</th><th>Product</th><th>Units Sold (${meta.window_days} days)</th><th>Rating</th><th>Score</th></tr></thead>
+    <tbody>${rows||'<tr><td colspan="5" style="text-align:center;padding:24px;color:#64748B">No sales in the last '+meta.window_days+' days yet. Best sellers appear here automatically as orders come in.</td></tr>'}</tbody></table></div>`;
+}
+
 function adminDataSignature(){
   return ORDERS_DATA.map(o=>o.id+':'+o.status+':'+o.total+':'+(o.packedAt?1:0)).join('|')
-    +'#'+PRODUCTS.length+':'+PRODUCTS.reduce((s,p)=>s+p.stock,0)+'#'+CUSTOMERS_DATA.length;
+    +'#'+PRODUCTS.length+':'+PRODUCTS.reduce((s,p)=>s+p.stock,0)+'#'+CUSTOMERS_DATA.length
+    +'#'+BEST_ADMIN.map(b=>b.product_id+':'+b.units+':'+b.rating_count+':'+b.avg_rating).join(',');
 }
 async function refreshAdminData(name){
   const before=adminDataSignature();
   try{
-    if(name==='dashboard'||name==='analytics') await Promise.all([loadOrders(),loadProducts(),loadCustomers()]);
+    if(name==='dashboard'||name==='analytics') await Promise.all([loadOrders(),loadProducts(),loadCustomers(),loadAdminBestSellers()]);
     else if(name==='orders'||name==='packing') await loadOrders();
     else return false;
   }catch(e){ return false; }
@@ -1897,6 +1951,7 @@ function buildDashboard(){
       </div>
       <div style="position:relative;height:220px"><canvas id="ch-db-top"></canvas></div>
     </div>
+    ${bestSellersCardHtml()}
     <div class="tbl-wrap"><div class="tbl-head"><h3>Recent Orders</h3><button class="btn-add" onclick="aPanel('orders',document.getElementById('a-item-orders'))">View All</button></div>
       <table class="a-table"><thead><tr><th>Order ID</th><th>Customer</th><th>Items</th><th>Total</th><th>Status</th></tr></thead>
       <tbody>${ORDERS_DATA.slice(0,5).map(o=>`<tr><td>${o.id}</td><td>${o.customer}</td><td style="font-size:11px;color:#64748B;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${o.items}</td><td>${fmtPeso(o.total)}</td><td><span class="badge ${o.status==='Delivered'?'bg-green':o.status==='Shipped'?'bg-blue':o.status==='Processing'?'bg-amber':'bg-gray'}">${statusLabel(o.status)}</span></td></tr>`).join('')}</tbody>
@@ -2086,7 +2141,7 @@ function buildProducts(){
         </div>
         <div><label style="font-size:11px;color:#64748B;display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:0.06em">Manufacturing Date</label><input type="date" id="pf-mfg"></div>
         <div><label style="font-size:11px;color:#64748B;display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:0.06em">Expiry Date</label><input type="date" id="pf-exp"></div>
-        <div><label style="font-size:11px;color:#64748B;display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:0.06em">Shop Label</label><select id="pf-badge"><option value="">None</option><option value="hot">🔥 Best Seller</option><option value="new">✨ New Arrival</option></select></div>
+        <div><label style="font-size:11px;color:#64748B;display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:0.06em">Shop Label</label><select id="pf-badge"><option value="">None</option><option value="new">✨ New Arrival</option></select></div>
         <div><label style="font-size:11px;color:#64748B;display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:0.06em">Sale Price (₱) — empty = not on sale</label><input type="number" id="pf-sale" placeholder="e.g. 12.00" step="0.01" min="0"></div>
         <div class="full"><label style="font-size:11px;color:#64748B;display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:0.06em">Description</label><textarea id="pf-desc" placeholder="Product description..."></textarea></div>
       </div>
@@ -2108,11 +2163,11 @@ function renderProdRows(){
       <td>${p.stock===0?'<span class="badge bg-red">Out of Stock</span>':p.stock<30?'<span class="badge bg-amber">Low Stock</span>':'<span class="badge bg-green">In Stock</span>'}</td>
       <td>${expiryBadge(p)}${p.mfg?`<div style="font-size:10px;color:#94A3B8;margin-top:2px">Mfg ${fmtDate(p.mfg)}</div>`:''}</td>
       <td>
-        <select class="period-select" title="Best Sellers / New Arrivals label" onchange="quickSetBadge(${p.id},this.value)">
-          <option value="" ${!p.badge?'selected':''}>—</option>
-          <option value="hot" ${p.badge==='hot'?'selected':''}>🔥 Best Seller</option>
+        <select class="period-select" title="New Arrivals label (Best Sellers are automatic)" onchange="quickSetBadge(${p.id},this.value)">
+          <option value="" ${p.badge!=='new'?'selected':''}>—</option>
           <option value="new" ${p.badge==='new'?'selected':''}>✨ New Arrival</option>
         </select>
+        ${isBestSeller(p)?`<div style="font-size:10px;color:#B91C1C;margin-top:4px;font-weight:700">🔥 Best Seller #${bestSellerRank[p.id]} (automatic)</div>`:''}
         ${saleActive(p)?`<div style="font-size:10px;color:#B45309;margin-top:4px;font-weight:600">⚡ Sale ${fmtPeso(p.salePrice)} (−${salePct(p)}%)</div>`:''}
       </td>
       <td><button class="btn-edit" onclick="editProduct(${p.id})">Edit</button><button class="btn-del" onclick="deleteProduct(${p.id})">Delete</button></td>
@@ -2186,7 +2241,7 @@ async function saveProduct(){
   updateProdCount();
 }
 
-/* Changes a product's Best Seller / New Arrival label straight from the table */
+/* Changes a product's New Arrival label straight from the table (Best Sellers are automatic) */
 async function quickSetBadge(id,value){
   const p=PRODUCTS.find(x=>x.id===id); if(!p) return;
   try {
@@ -2194,7 +2249,7 @@ async function quickSetBadge(id,value){
     await loadProducts();
   } catch(e){ showToast('⚠️ '+e.message); document.getElementById('prod-tbody').innerHTML=renderProdRows(); return; }
   document.getElementById('prod-tbody').innerHTML=renderProdRows();
-  showToast(value==='hot'?'🔥 '+p.name+' is now a Best Seller.':value==='new'?'✨ '+p.name+' is now a New Arrival.':'Label removed from '+p.name+'.');
+  showToast(value==='new'?'✨ '+p.name+' is now a New Arrival.':'Label removed from '+p.name+'.');
 }
 
 function editProduct(id){
@@ -3196,23 +3251,24 @@ function setCat(cat){
   renderProducts();
   document.getElementById('section-title').textContent=cat;
 }
-function filterBadge(badge){
+async function filterBadge(badge){
    const onShop = document.getElementById('cpage-shop')?.classList.contains('active');
   if(!onShop){ cPage('shop',document.getElementById('cnav-shop')); }
   activeCat='All';
   document.querySelectorAll('.cat-strip-item').forEach(el=>el.classList.remove('on'));
   const grid=document.getElementById('products-grid');
   const q='';
-  const list=PRODUCTS.filter(p=>p.badge===badge);
-  if(!list.length){grid.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:64px;color:var(--v-muted)"><div style="font-size:44px;margin-bottom:12px">'+(badge==='hot'?'🔥':'✨')+'</div><p>No products found.</p></div>';return;}
+  if(badge==='hot') await loadBestSellers();        // always show the latest ranking
+  const list=badge==='hot'?bestSellerProducts():PRODUCTS.filter(p=>p.badge===badge);
+  if(!list.length){grid.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:64px;color:var(--v-muted)"><div style="font-size:44px;margin-bottom:12px">'+(badge==='hot'?'🔥':'✨')+'</div><p>'+(badge==='hot'?'No best sellers yet. They appear here automatically as customers buy and review products.':'No products found.')+'</p></div>';document.getElementById('section-title').textContent=badge==='hot'?'🔥 Best Sellers':'✨ New Arrivals';return;}
   grid.innerHTML=list.map(p=>{
     const inWL=wishlist.includes(p.id);
     const r=productRatings[p.id];
     const starsHtml=r?[1,2,3,4,5].map(i=>`<span class="s${i<=Math.round(parseFloat(r.avg))?' on':''}">${i<=Math.round(parseFloat(r.avg))?'★':'☆'}</span>`).join('')+'<span class="p-rating-txt">('+r.count+')</span>':'';
-    const badgeHtml=p.badge==='hot'?'<span class="p-badge">🔥 Hot</span>':p.badge==='new'?'<span class="p-badge new">✨ New</span>':'';
+    const badgeHtml=(badge==='hot'&&isBestSeller(p))?bestSellerBadge(p):p.badge==='new'?'<span class="p-badge new">✨ New</span>':isBestSeller(p)?bestSellerBadge(p):'';
     return`<div class="p-card${isExpired(p)?' expired':''}" onclick="openProductModal(${p.id})">${isExpired(p)?'<span class="p-badge" style="background:#B91C1C">⛔ Expired</span>':badgeHtml}<div class="p-img">${productImgHtml(p)}<button class="p-wishlist" onclick="event.stopPropagation();toggleWishlist(${p.id})">${inWL?'❤️':'♡'}</button></div><div class="p-info">${r?`<div class="p-stars-row">${starsHtml}</div>`:''}<div class="p-name">${p.name}</div><div class="p-cat">${p.cat}</div><div class="p-price-row"><div class="p-price">${priceHtml(p)}</div></div><div class="p-stock ${p.stock===0?'low':''}">${p.stock===0?'Out of stock':p.stock+' in stock'}</div><button class="p-add" onclick="event.stopPropagation();addCart(${p.id})" ${p.stock===0||isExpired(p)?'disabled':''}>${isExpired(p)?'Expired':'🛒 Add to Cart'}</button></div></div>`;
   }).join('');
-  document.getElementById('section-title').textContent=badge==='hot'?'🔥 Best Sellers':'✨ New Arrivals';
+  document.getElementById('section-title').textContent=badge==='hot'?'🔥 Best Sellers · Top '+(bestSellerIds.length||10):'✨ New Arrivals';
 }
 function triggerFlashSale(){
   const onShop = document.getElementById('cpage-shop')?.classList.contains('active');
@@ -3578,11 +3634,11 @@ async function doLogin(){
     document.getElementById('prof-avatar-big').textContent=acc.initials;
     document.getElementById('c-username').textContent=acc.name.split(' ')[0];
     applyProfileToUI(acc);
-    await loadAllData([['products',loadProducts], ['wishlist',loadWishlist], ['orders',loadOrders], ['addresses',loadAddresses], ['notifications',loadNotifications]]);
+    await loadAllData([['products',loadProducts], ['wishlist',loadWishlist], ['orders',loadOrders], ['addresses',loadAddresses], ['notifications',loadNotifications], ['bestsellers',loadBestSellers]]);
     loadCartFromStorage();updatePill();buildShop();renderAddrList();buildRecommendations();updateWishlistBadge();updateNotifBell();renderWishlist();
   } else {
     document.getElementById('screen-admin').classList.remove('hidden');
-    await loadAllData([['products',loadProducts], ['orders',loadOrders], ['customers',loadCustomers]]);
+    await loadAllData([['products',loadProducts], ['orders',loadOrders], ['customers',loadCustomers], ['bestsellers',loadAdminBestSellers]]);
     buildAdminAll();
   }
 }
@@ -3625,11 +3681,11 @@ async function tryRestoreSession(){
     document.getElementById('prof-avatar-big').textContent=acc.initials;
     document.getElementById('c-username').textContent=acc.name.split(' ')[0];
     applyProfileToUI(acc);
-    await loadAllData([['products',loadProducts], ['wishlist',loadWishlist], ['orders',loadOrders], ['addresses',loadAddresses], ['notifications',loadNotifications]]);
+    await loadAllData([['products',loadProducts], ['wishlist',loadWishlist], ['orders',loadOrders], ['addresses',loadAddresses], ['notifications',loadNotifications], ['bestsellers',loadBestSellers]]);
     loadCartFromStorage();updatePill();buildShop();renderAddrList();buildRecommendations();updateWishlistBadge();updateNotifBell();renderWishlist();
   } else {
     document.getElementById('screen-admin').classList.remove('hidden');
-    await loadAllData([['products',loadProducts], ['orders',loadOrders], ['customers',loadCustomers]]);
+    await loadAllData([['products',loadProducts], ['orders',loadOrders], ['customers',loadCustomers], ['bestsellers',loadAdminBestSellers]]);
     buildAdminAll();
   }
 }
