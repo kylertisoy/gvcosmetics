@@ -414,9 +414,34 @@ async function loadNotifications() {
   NOTIFS = data.map(mapNotif);
 }
 
+/* Customer labels (New / Occasional / Loyal) come from the server's /customer-analysis. They are earned by
+   buying MORE (total quantity of items, and coming back), not by a single purchase. Its numbers replace
+   the old order-count ones for the Customer Analysis screen, the Analytics chart and the CSV. */
+let CUSTOMER_RULES={loyal_min_items:10,loyal_min_orders:2,occasional_min_items:3};
 async function loadCustomers() {
   const data = await apiFetch('/customers');
   CUSTOMERS_DATA = data;
+  await applyCustomerSegments();
+}
+async function applyCustomerSegments(){
+  try {
+    const r=await apiFetch('/customer-analysis');
+    CUSTOMER_RULES=r.rules||CUSTOMER_RULES;
+    const byEmail={};
+    r.customers.forEach(c=>{ byEmail[String(c.email||'').toLowerCase()]=c; });
+    CUSTOMERS_DATA.forEach(c=>{
+      const x=byEmail[String(c.email||'').toLowerCase()];
+      if(x){ c.seg=x.seg; c.orders=x.orders; c.items=x.items; c.products=x.products; c.total=x.total; }
+    });
+  } catch(e){ console.warn('Customer labels not updated:',e.message); }     // quiet: the old labels stay
+}
+function segmentRules(){
+  const r=CUSTOMER_RULES;
+  return {
+    Loyal: r.loyal_min_items+'+ items bought, in '+r.loyal_min_orders+'+ orders',
+    Occasional: r.occasional_min_items+'+ items bought',
+    New: 'Fewer than '+r.occasional_min_items+' items so far'
+  };
 }
 
 /* ═══ TOAST ═══ */
@@ -1728,8 +1753,8 @@ function exportOrdersCSV(){
 
 function exportCustomersCSV(){
   if(!CUSTOMERS_DATA.length){ showToast('No customers to export.'); return; }
-  const rows = CUSTOMERS_DATA.map(c => [c.name, c.email, c.orders, c.total, c.seg]);
-  downloadCSV('gv-cosmetics-customers.csv', ['Name','Email','Total Orders','Total Spent','Segment'], rows);
+  const rows = CUSTOMERS_DATA.map(c => [c.name, c.email, c.orders, c.items!=null?c.items:'', c.total, c.seg]);
+  downloadCSV('gv-cosmetics-customers.csv', ['Name','Email','Total Orders','Items Bought','Total Spent','Segment'], rows);
   showToast('✅ Customer list exported.');
 }
 
@@ -1864,7 +1889,7 @@ function bestSellersCardHtml(){
 
 function adminDataSignature(){
   return ORDERS_DATA.map(o=>o.id+':'+o.status+':'+o.total+':'+(o.packedAt?1:0)).join('|')
-    +'#'+PRODUCTS.length+':'+PRODUCTS.reduce((s,p)=>s+p.stock,0)+'#'+CUSTOMERS_DATA.length
+    +'#'+PRODUCTS.length+':'+PRODUCTS.reduce((s,p)=>s+p.stock,0)+'#'+CUSTOMERS_DATA.map(c=>(c.email||'')+':'+(c.seg||'')).join(',')
     +'#'+BEST_ADMIN.map(b=>b.product_id+':'+b.units+':'+b.rating_count+':'+b.avg_rating).join(',');
 }
 async function refreshAdminData(name){
@@ -2729,22 +2754,25 @@ function buildCustomers(){
   const loyal=CUSTOMERS_DATA.filter(c=>c.seg==='Loyal');
   const occ=CUSTOMERS_DATA.filter(c=>c.seg==='Occasional');
   const nw=CUSTOMERS_DATA.filter(c=>c.seg==='New');
+  const rules=segmentRules();
   document.getElementById('ap-customers').innerHTML=`<div class="a-title">Customer Analysis</div>
     <div class="seg-grid">
-      <div class="seg-card"><div class="seg-num" style="color:#C2607E">${loyal.length}</div><div class="seg-lbl">Loyal Customers</div><div class="seg-rule">5 or more orders</div></div>
-      <div class="seg-card"><div class="seg-num" style="color:#B8944A">${occ.length}</div><div class="seg-lbl">Occasional Buyers</div><div class="seg-rule">2 to 4 orders</div></div>
-      <div class="seg-card"><div class="seg-num" style="color:#4F7EF7">${nw.length}</div><div class="seg-lbl">New Customers</div><div class="seg-rule">First order only</div></div>
+      <div class="seg-card"><div class="seg-num" style="color:#C2607E">${loyal.length}</div><div class="seg-lbl">Loyal Customers</div><div class="seg-rule">${rules.Loyal}</div></div>
+      <div class="seg-card"><div class="seg-num" style="color:#B8944A">${occ.length}</div><div class="seg-lbl">Occasional Buyers</div><div class="seg-rule">${rules.Occasional}</div></div>
+      <div class="seg-card"><div class="seg-num" style="color:#4F7EF7">${nw.length}</div><div class="seg-lbl">New Customers</div><div class="seg-rule">${rules.New}</div></div>
     </div>
+    <div style="font-size:12px;color:#64748B;margin:-4px 0 14px;line-height:1.6">A customer moves up by buying <b>more products or a bigger quantity</b>, not from one small purchase. Loyal customers have also come back for more than one order. Cancelled orders don't count.</div>
     <div class="tbl-wrap"><div class="tbl-head"><h3>Customer List</h3><button class="btn-add" onclick="exportCustomersCSV()">Export CSV</button></div>
-      <table class="a-table"><thead><tr><th>Name</th><th>Email</th><th>Total Orders</th><th>Total Spent</th><th>Segment</th><th>Actions</th></tr></thead>
+      <table class="a-table"><thead><tr><th>Name</th><th>Email</th><th>Total Orders</th><th>Items Bought</th><th>Total Spent</th><th>Segment</th><th>Actions</th></tr></thead>
       <tbody>${CUSTOMERS_DATA.map(c=>`
         <tr>
-          <td style="font-weight:500">${c.name}</td>
-          <td style="color:#64748B;font-size:12px">${c.email}</td>
+          <td style="font-weight:500">${escHtml(c.name)}</td>
+          <td style="color:#64748B;font-size:12px">${escHtml(c.email)}</td>
           <td>${c.orders}</td>
+          <td>${c.items!=null?c.items:'—'}</td>
           <td>${fmtPeso(c.total)}</td>
           <td><span class="badge ${c.seg==='Loyal'?'bg-green':c.seg==='Occasional'?'bg-amber':'bg-blue'}">${c.seg}</span></td>
-          <td><button class="btn-edit" onclick="openEmailModal('${escJS(c.email)}','${escJS(c.name)}')">Email</button></td>
+          <td><button class="btn-edit" onclick="openEmailModal('${escHtml(escJS(c.email))}','${escHtml(escJS(c.name))}')">Email</button></td>
         </tr>`).join('')}
       </tbody></table></div>`;
 }
