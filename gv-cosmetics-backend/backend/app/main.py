@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import inspect, text
 
 from .database import Base, engine
-from .routers import auth, products, orders, addresses, wishlist, notifications, customers, analytics, payments, admin_email, password_reset, inventory_alerts, delivery, bestsellers
+from .routers import auth, products, orders, addresses, wishlist, notifications, customers, analytics, payments, admin_email, password_reset, inventory_alerts, delivery, bestsellers, customer_segments
 
 load_dotenv()
 
@@ -66,6 +66,7 @@ app.include_router(password_reset.router)
 app.include_router(inventory_alerts.router)
 app.include_router(delivery.router)
 app.include_router(bestsellers.router)
+app.include_router(customer_segments.router)
 
 # Expiry alerts run by themselves: a check shortly after startup, then every few hours
 inventory_alerts.start_scheduler()
